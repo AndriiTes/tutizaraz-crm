@@ -27,6 +27,14 @@ class WebsiteOrderIn(BaseModel):
     createdAt: Optional[str] = None
 
 
+class WebsiteChatIn(BaseModel):
+    """Формат повідомлення з плаваючого чат-віджета на сайті."""
+    source: Optional[str] = "website-chat"
+    name: Optional[str] = None
+    message: str
+    createdAt: Optional[str] = None
+
+
 class OrderOut(BaseModel):
     id: int
     source: str

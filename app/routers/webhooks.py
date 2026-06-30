@@ -47,6 +47,22 @@ async def website_order(payload: schemas.WebsiteOrderIn, db: Session = Depends(g
     return {"ok": True, "order_id": order.id}
 
 
+@router.post("/webhooks/website-chat")
+async def website_chat(payload: schemas.WebsiteChatIn, db: Session = Depends(get_db)):
+    """Приймає повідомлення з плаваючого чат-віджета на сайті."""
+    order = models.Order(
+        source=payload.source or "website-chat",
+        status="new",
+        name=payload.name or "Гість із сайту",
+        comment=payload.message,
+        raw_payload=payload.model_dump(),
+    )
+    db.add(order)
+    db.commit()
+    db.refresh(order)
+    return {"ok": True, "order_id": order.id}
+
+
 # ---------------------------------------------------------------------------
 # Заготовки під наступні канали. Ендпоінти вже існують і повертають 200 OK,
 # щоб їх можна було одразу прописати в налаштуваннях ботів — саму логіку
