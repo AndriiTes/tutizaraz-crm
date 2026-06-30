@@ -1,3 +1,6 @@
+import os
+
+import httpx
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
@@ -5,6 +8,8 @@ from .. import models, schemas
 from ..database import get_db
 
 router = APIRouter()
+
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 
 
 @router.post("/webhooks/website-order")
@@ -39,8 +44,45 @@ async def website_order(payload: schemas.WebsiteOrderIn, db: Session = Depends(g
 @router.post("/webhooks/telegram")
 async def telegram_webhook(request: Request, db: Session = Depends(get_db)):
     body = await request.json()
-    # TODO: розпарсити update від Telegram Bot API,
-    # створити models.Order(source="telegram", ...)
+    message = body.get("message") or body.get("edited_message")
+    if not message:
+        # Telegram шле й інші типи апдейтів (callback_query тощо) — поки ігноруємо
+        return {"ok": True}
+
+    chat = message.get("chat", {})
+    from_user = message.get("from", {})
+    text = message.get("text", "")
+
+    name_parts = [from_user.get("first_name", ""), from_user.get("last_name", "")]
+    full_name = " ".join(p for p in name_parts if p).strip() or from_user.get("username") or "Telegram користувач"
+
+    order = models.Order(
+        source="telegram",
+        status="new",
+        name=full_name,
+        comment=text,
+        external_id=str(chat.get("id")) if chat.get("id") is not None else None,
+        raw_payload=body,
+    )
+    db.add(order)
+    db.commit()
+    db.refresh(order)
+
+    # Автоматичне підтвердження клієнту, що звернення отримано і фіксується в CRM
+    if TELEGRAM_BOT_TOKEN and chat.get("id") is not None:
+        try:
+            async with httpx.AsyncClient(timeout=5) as client:
+                await client.post(
+                    f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                    json={
+                        "chat_id": chat.get("id"),
+                        "text": "Дякуємо за звернення! Ми вже бачимо ваше повідомлення і скоро зв'яжемось з вами. 🍔"
+                    },
+                )
+        except Exception:
+            # Не валимо обробку вебхука через тимчасову недоступність Telegram API
+            pass
+
     return {"ok": True}
 
 

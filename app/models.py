@@ -20,6 +20,10 @@ class Order(Base):
     address = Column(String, nullable=True)
     comment = Column(Text, nullable=True)
 
+    # Ідентифікатор клієнта в каналі: chat_id у Telegram, user_id у Viber,
+    # wa_id у WhatsApp тощо. Знадобиться, щоб надсилати відповіді клієнту.
+    external_id = Column(String, nullable=True, index=True)
+
     items = Column(JSON, nullable=True)
     total = Column(Float, default=0)
 

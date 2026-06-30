@@ -35,6 +35,7 @@ class OrderOut(BaseModel):
     phone: Optional[str] = None
     address: Optional[str] = None
     comment: Optional[str] = None
+    external_id: Optional[str] = None
     items: Optional[Any] = None
     total: float
     created_at: datetime
