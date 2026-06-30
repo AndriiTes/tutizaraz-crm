@@ -20,6 +20,7 @@ body{
 
 /* Login */
 #loginScreen{display:flex; align-items:center; justify-content:center;}
+#loginScreen[hidden], #appScreen[hidden]{display:none;}
 .login-card{
   background:var(--paper);
   border:2px solid var(--ink);
