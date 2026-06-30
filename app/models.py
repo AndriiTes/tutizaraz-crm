@@ -33,3 +33,22 @@ class Order(Base):
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class Message(Base):
+    """
+    Окремий журнал листування (на відміну від Order, який представляє
+    структуроване замовлення). Кожен вхідний чи вихідний рядок переписки
+    зберігається тут. Розмова групується за парою (channel, external_id):
+    chat_id у Telegram, session_id у віджеті сайту, user_id у Viber тощо.
+    """
+    __tablename__ = "messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    channel = Column(String, index=True)  # telegram / viber / whatsapp / instagram / website-chat
+    external_id = Column(String, index=True)
+    customer_name = Column(String, nullable=True)
+    direction = Column(String)  # "in" (від клієнта) або "out" (від оператора/бота)
+    body = Column(Text)
+    raw_payload = Column(JSON, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

@@ -11,7 +11,7 @@
 <div id="loginScreen" class="screen">
   <form id="loginForm" class="login-card">
     <h1>Тут<span class="amp">&amp;</span>Зараз</h1>
-    <p class="login-sub">Вхід у панель заявок</p>
+    <p class="login-sub">Вхід у панель</p>
     <label>
       Пароль адміністратора
       <input type="password" id="loginPassword" required autofocus>
@@ -23,15 +23,20 @@
 
 <div id="appScreen" class="screen" hidden>
   <header class="topbar">
-    <h1>Тут<span class="amp">&amp;</span>Зараз — заявки</h1>
-    <div class="filters">
+    <h1>Тут<span class="amp">&amp;</span>Зараз</h1>
+    <nav class="tabs">
+      <button class="tab-btn active" data-tab="orders">Заявки</button>
+      <button class="tab-btn" data-tab="inbox">Повідомлення <span class="unread-badge" id="unreadBadge" hidden>0</span></button>
+    </nav>
+    <button id="logoutBtn" class="btn btn-ghost">Вийти</button>
+  </header>
+
+  <!-- ===== ЗАЯВКИ ===== -->
+  <section id="ordersTab" class="tab-panel">
+    <div class="panel-toolbar">
       <select id="filterSource">
         <option value="">Усі канали</option>
         <option value="website">Сайт</option>
-        <option value="telegram">Telegram</option>
-        <option value="viber">Viber</option>
-        <option value="whatsapp">WhatsApp</option>
-        <option value="instagram">Instagram</option>
         <option value="phone">Телефонія</option>
       </select>
       <select id="filterStatus">
@@ -43,12 +48,8 @@
         <option value="done">Виконана</option>
         <option value="cancelled">Скасована</option>
       </select>
-      <button id="refreshBtn" class="btn btn-ghost">Оновити</button>
-      <button id="logoutBtn" class="btn btn-ghost">Вийти</button>
+      <button id="refreshOrdersBtn" class="btn btn-ghost">Оновити</button>
     </div>
-  </header>
-
-  <main>
     <table class="orders-table">
       <thead>
         <tr>
@@ -58,8 +59,24 @@
       </thead>
       <tbody id="ordersBody"></tbody>
     </table>
-    <p id="emptyState" class="empty" hidden>Заявок не знайдено.</p>
-  </main>
+    <p id="ordersEmptyState" class="empty" hidden>Заявок не знайдено.</p>
+  </section>
+
+  <!-- ===== ПОВІДОМЛЕННЯ (ІНБОКС) ===== -->
+  <section id="inboxTab" class="tab-panel" hidden>
+    <div class="inbox-layout">
+      <div class="conversation-list">
+        <div class="panel-toolbar">
+          <button id="refreshInboxBtn" class="btn btn-ghost btn-small">Оновити</button>
+        </div>
+        <ul id="conversationItems"></ul>
+        <p id="inboxEmptyState" class="empty" hidden>Повідомлень ще немає.</p>
+      </div>
+      <div class="conversation-thread" id="threadPanel">
+        <p class="thread-placeholder">Оберіть розмову зліва, щоб побачити переписку.</p>
+      </div>
+    </div>
+  </section>
 </div>
 
 <script src="app.js"></script>

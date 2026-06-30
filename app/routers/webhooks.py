@@ -23,12 +23,86 @@ WHATSAPP_PHONE_NUMBER_ID = os.getenv("WHATSAPP_PHONE_NUMBER_ID", "")
 
 INSTAGRAM_ACCESS_TOKEN = os.getenv("INSTAGRAM_ACCESS_TOKEN", "")
 
+AUTO_REPLY_TEXT = "Дякуємо за звернення! Ми вже бачимо ваше повідомлення і скоро зв'яжемось з вами. 🍔"
+
+
+async def send_channel_reply(channel: str, external_id: str, text: str) -> bool:
+    """
+    Єдина точка відправки повідомлення клієнту назад у канал, з якого він писав.
+    Використовується і для автоматичного підтвердження одразу після вхідного
+    повідомлення, і для ручних відповідей оператора з CRM-панелі.
+    Для website-chat відправляти нічого не потрібно — повідомлення просто
+    зберігається в базі, а віджет сайту підхоплює його через опитування (polling).
+    """
+    try:
+        async with httpx.AsyncClient(timeout=8) as client:
+            if channel == "telegram" and TELEGRAM_BOT_TOKEN:
+                await client.post(
+                    f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                    json={"chat_id": external_id, "text": text},
+                )
+                return True
+
+            if channel == "viber" and VIBER_BOT_TOKEN:
+                await client.post(
+                    "https://chatapi.viber.com/pa/send_message",
+                    headers={"X-Viber-Auth-Token": VIBER_BOT_TOKEN},
+                    json={
+                        "receiver": external_id,
+                        "type": "text",
+                        "sender": {"name": "Тут&Зараз"},
+                        "text": text,
+                    },
+                )
+                return True
+
+            if channel == "whatsapp" and WHATSAPP_ACCESS_TOKEN and WHATSAPP_PHONE_NUMBER_ID:
+                await client.post(
+                    f"https://graph.facebook.com/{META_GRAPH_VERSION}/{WHATSAPP_PHONE_NUMBER_ID}/messages",
+                    headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"},
+                    json={"messaging_product": "whatsapp", "to": external_id, "text": {"body": text}},
+                )
+                return True
+
+            if channel == "instagram" and INSTAGRAM_ACCESS_TOKEN:
+                await client.post(
+                    f"https://graph.facebook.com/{META_GRAPH_VERSION}/me/messages",
+                    params={"access_token": INSTAGRAM_ACCESS_TOKEN},
+                    json={"recipient": {"id": external_id}, "message": {"text": text}},
+                )
+                return True
+
+            if channel == "website-chat":
+                # Нічого надсилати назовні не треба — повідомлення вже в базі,
+                # віджет сайту підхопить його сам через опитування.
+                return True
+    except Exception:
+        return False
+
+    return False
+
+
+def save_message(db: Session, channel: str, external_id: str, customer_name: str | None,
+                  direction: str, body: str, raw_payload: dict | None = None) -> models.Message:
+    msg = models.Message(
+        channel=channel,
+        external_id=external_id,
+        customer_name=customer_name,
+        direction=direction,
+        body=body,
+        raw_payload=raw_payload,
+    )
+    db.add(msg)
+    db.commit()
+    db.refresh(msg)
+    return msg
+
 
 @router.post("/webhooks/website-order")
 async def website_order(payload: schemas.WebsiteOrderIn, db: Session = Depends(get_db)):
     """
     Приймає заявку з форми сайту (script.js -> CONFIG.WEBHOOK_URL).
-    Очікуваний формат тіла запиту вже узгоджений з фронтендом сайту.
+    Це структуроване замовлення (товари, сума) — лишається в таблиці "Заявки".
     """
     order = models.Order(
         source=payload.source or "website",
@@ -49,67 +123,61 @@ async def website_order(payload: schemas.WebsiteOrderIn, db: Session = Depends(g
 
 @router.post("/webhooks/website-chat")
 async def website_chat(payload: schemas.WebsiteChatIn, db: Session = Depends(get_db)):
-    """Приймає повідомлення з плаваючого чат-віджета на сайті."""
-    order = models.Order(
-        source=payload.source or "website-chat",
-        status="new",
-        name=payload.name or "Гість із сайту",
-        comment=payload.message,
+    """Приймає повідомлення з плаваючого чат-віджета на сайті — потрапляє в Повідомлення."""
+    save_message(
+        db,
+        channel="website-chat",
+        external_id=payload.session_id,
+        customer_name=payload.name or "Гість із сайту",
+        direction="in",
+        body=payload.message,
         raw_payload=payload.model_dump(),
     )
-    db.add(order)
-    db.commit()
-    db.refresh(order)
-    return {"ok": True, "order_id": order.id}
+    return {"ok": True}
 
 
-# ---------------------------------------------------------------------------
-# Заготовки під наступні канали. Ендпоінти вже існують і повертають 200 OK,
-# щоб їх можна було одразу прописати в налаштуваннях ботів — саму логіку
-# розбору повідомлень додамо на кроках 4–5 нашого плану, коли будуть токени.
-# ---------------------------------------------------------------------------
+@router.get("/public/website-chat/{session_id}/messages")
+async def public_widget_messages(session_id: str, db: Session = Depends(get_db)):
+    """
+    Публічний (без авторизації) ендпоінт для самого віджета сайту —
+    дозволяє відвідувачу побачити відповідь оператора. Віджет опитує
+    цей шлях періодично, поки чат-панель відкрита.
+    """
+    rows = (
+        db.query(models.Message)
+        .filter(models.Message.channel == "website-chat", models.Message.external_id == session_id)
+        .order_by(models.Message.created_at.asc())
+        .all()
+    )
+    return [
+        {"id": m.id, "direction": m.direction, "body": m.body, "created_at": m.created_at.isoformat()}
+        for m in rows
+    ]
+
 
 @router.post("/webhooks/telegram")
 async def telegram_webhook(request: Request, db: Session = Depends(get_db)):
     body = await request.json()
     message = body.get("message") or body.get("edited_message")
     if not message:
-        # Telegram шле й інші типи апдейтів (callback_query тощо) — поки ігноруємо
         return {"ok": True}
 
     chat = message.get("chat", {})
     from_user = message.get("from", {})
     text = message.get("text", "")
+    chat_id = chat.get("id")
+    if chat_id is None:
+        return {"ok": True}
 
     name_parts = [from_user.get("first_name", ""), from_user.get("last_name", "")]
     full_name = " ".join(p for p in name_parts if p).strip() or from_user.get("username") or "Telegram користувач"
 
-    order = models.Order(
-        source="telegram",
-        status="new",
-        name=full_name,
-        comment=text,
-        external_id=str(chat.get("id")) if chat.get("id") is not None else None,
-        raw_payload=body,
-    )
-    db.add(order)
-    db.commit()
-    db.refresh(order)
+    save_message(db, channel="telegram", external_id=str(chat_id), customer_name=full_name,
+                 direction="in", body=text, raw_payload=body)
 
-    # Автоматичне підтвердження клієнту, що звернення отримано і фіксується в CRM
-    if TELEGRAM_BOT_TOKEN and chat.get("id") is not None:
-        try:
-            async with httpx.AsyncClient(timeout=5) as client:
-                await client.post(
-                    f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
-                    json={
-                        "chat_id": chat.get("id"),
-                        "text": "Дякуємо за звернення! Ми вже бачимо ваше повідомлення і скоро зв'яжемось з вами. 🍔"
-                    },
-                )
-        except Exception:
-            # Не валимо обробку вебхука через тимчасову недоступність Telegram API
-            pass
+    if await send_channel_reply("telegram", str(chat_id), AUTO_REPLY_TEXT):
+        save_message(db, channel="telegram", external_id=str(chat_id), customer_name=full_name,
+                     direction="out", body=AUTO_REPLY_TEXT)
 
     return {"ok": True}
 
@@ -120,52 +188,27 @@ async def viber_webhook(request: Request, db: Session = Depends(get_db)):
     event = body.get("event")
 
     if event != "message":
-        # Інші типи подій від Viber (підписка, доставлено, прочитано тощо) —
-        # просто підтверджуємо отримання, заявку не створюємо
         return {"status": 0}
 
     sender = body.get("sender", {})
     message = body.get("message", {})
     text = message.get("text", "")
+    sender_id = sender.get("id")
+    name = sender.get("name") or "Viber користувач"
 
-    order = models.Order(
-        source="viber",
-        status="new",
-        name=sender.get("name") or "Viber користувач",
-        comment=text,
-        external_id=sender.get("id"),
-        raw_payload=body,
-    )
-    db.add(order)
-    db.commit()
-    db.refresh(order)
+    if sender_id:
+        save_message(db, channel="viber", external_id=sender_id, customer_name=name,
+                     direction="in", body=text, raw_payload=body)
 
-    if VIBER_BOT_TOKEN and sender.get("id"):
-        try:
-            async with httpx.AsyncClient(timeout=5) as client:
-                await client.post(
-                    "https://chatapi.viber.com/pa/send_message",
-                    headers={"X-Viber-Auth-Token": VIBER_BOT_TOKEN},
-                    json={
-                        "receiver": sender.get("id"),
-                        "type": "text",
-                        "sender": {"name": "Тут&Зараз"},
-                        "text": "Дякуємо за звернення! Ми вже бачимо ваше повідомлення і скоро зв'яжемось з вами. 🍔",
-                    },
-                )
-        except Exception:
-            pass
+        if await send_channel_reply("viber", sender_id, AUTO_REPLY_TEXT):
+            save_message(db, channel="viber", external_id=sender_id, customer_name=name,
+                         direction="out", body=AUTO_REPLY_TEXT)
 
     return {"status": 0}
 
 
 @router.get("/admin/setup-viber-webhook")
 async def setup_viber_webhook():
-    """
-    Одноразовий виклик: реєструє наш /webhooks/viber у Viber.
-    Достатньо відкрити цю адресу в браузері один раз, коли
-    VIBER_BOT_TOKEN вже заданий у змінних середовища Render.
-    """
     if not VIBER_BOT_TOKEN:
         return {"ok": False, "error": "VIBER_BOT_TOKEN не заданий у змінних середовища Render"}
 
@@ -182,7 +225,6 @@ async def setup_viber_webhook():
 
 
 def _verify_meta_webhook(request: Request) -> PlainTextResponse:
-    """Спільна логіка верифікації для WhatsApp і Instagram — обидва йдуть через Meta."""
     params = request.query_params
     mode = params.get("hub.mode")
     token = params.get("hub.verify_token")
@@ -205,7 +247,6 @@ async def whatsapp_webhook(request: Request, db: Session = Depends(get_db)):
         value = body["entry"][0]["changes"][0]["value"]
         messages = value.get("messages")
         if not messages:
-            # Статус-апдейти (доставлено/прочитано) — заявку не створюємо
             return {"ok": True}
 
         message = messages[0]
@@ -214,38 +255,16 @@ async def whatsapp_webhook(request: Request, db: Session = Depends(get_db)):
 
         contacts = value.get("contacts", [])
         name = contacts[0].get("profile", {}).get("name") if contacts else None
+        name = name or "WhatsApp користувач"
 
-        order = models.Order(
-            source="whatsapp",
-            status="new",
-            name=name or "WhatsApp користувач",
-            phone=from_number,
-            comment=text,
-            external_id=from_number,
-            raw_payload=body,
-        )
-        db.add(order)
-        db.commit()
-        db.refresh(order)
+        if from_number:
+            save_message(db, channel="whatsapp", external_id=from_number, customer_name=name,
+                         direction="in", body=text, raw_payload=body)
 
-        if WHATSAPP_ACCESS_TOKEN and WHATSAPP_PHONE_NUMBER_ID and from_number:
-            try:
-                async with httpx.AsyncClient(timeout=5) as client:
-                    await client.post(
-                        f"https://graph.facebook.com/{META_GRAPH_VERSION}/{WHATSAPP_PHONE_NUMBER_ID}/messages",
-                        headers={"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"},
-                        json={
-                            "messaging_product": "whatsapp",
-                            "to": from_number,
-                            "text": {
-                                "body": "Дякуємо за звернення! Ми вже бачимо ваше повідомлення і скоро зв'яжемось з вами. 🍔"
-                            },
-                        },
-                    )
-            except Exception:
-                pass
+            if await send_channel_reply("whatsapp", from_number, AUTO_REPLY_TEXT):
+                save_message(db, channel="whatsapp", external_id=from_number, customer_name=name,
+                             direction="out", body=AUTO_REPLY_TEXT)
     except (KeyError, IndexError, TypeError):
-        # Неочікувана структура апдейту (статуси, помилки тощо) — просто ігноруємо
         pass
 
     return {"ok": True}
@@ -265,38 +284,16 @@ async def instagram_webhook(request: Request, db: Session = Depends(get_db)):
         sender_id = messaging_event.get("sender", {}).get("id")
 
         if not sender_id or message.get("is_echo"):
-            # is_echo — це наше ж власне надіслане повідомлення, що повернулось вебхуком
             return {"ok": True}
 
         text = message.get("text", "")
 
-        order = models.Order(
-            source="instagram",
-            status="new",
-            name="Instagram користувач",
-            comment=text,
-            external_id=sender_id,
-            raw_payload=body,
-        )
-        db.add(order)
-        db.commit()
-        db.refresh(order)
+        save_message(db, channel="instagram", external_id=sender_id, customer_name="Instagram користувач",
+                     direction="in", body=text, raw_payload=body)
 
-        if INSTAGRAM_ACCESS_TOKEN:
-            try:
-                async with httpx.AsyncClient(timeout=5) as client:
-                    await client.post(
-                        f"https://graph.facebook.com/{META_GRAPH_VERSION}/me/messages",
-                        params={"access_token": INSTAGRAM_ACCESS_TOKEN},
-                        json={
-                            "recipient": {"id": sender_id},
-                            "message": {
-                                "text": "Дякуємо за звернення! Ми вже бачимо ваше повідомлення і скоро зв'яжемось з вами. 🍔"
-                            },
-                        },
-                    )
-            except Exception:
-                pass
+        if await send_channel_reply("instagram", sender_id, AUTO_REPLY_TEXT):
+            save_message(db, channel="instagram", external_id=sender_id, customer_name="Instagram користувач",
+                         direction="out", body=AUTO_REPLY_TEXT)
     except (KeyError, IndexError, TypeError):
         pass
 
@@ -305,14 +302,6 @@ async def instagram_webhook(request: Request, db: Session = Depends(get_db)):
 
 @router.post("/webhooks/telephony")
 async def telephony_webhook(request: Request, db: Session = Depends(get_db)):
-    """
-    Різні провайдери телефонії (Zadarma, Binotel, Ringostat тощо) шлють
-    вебхуки в різних форматах: хтось JSON, хтось form-urlencoded, і назви
-    полів для номера телефону теж відрізняються. Тому беремо дані максимально
-    гнучко і пробуємо найпоширеніші назви полів. Сирий вміст завжди зберігаємо
-    в raw_payload — якщо щось не розпізналось автоматично, його видно в CRM
-    і можна буде доточити обробку під конкретного провайдера.
-    """
     content_type = request.headers.get("content-type", "")
     if "application/json" in content_type:
         data = await request.json()

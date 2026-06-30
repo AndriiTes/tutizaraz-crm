@@ -30,9 +30,36 @@ class WebsiteOrderIn(BaseModel):
 class WebsiteChatIn(BaseModel):
     """Формат повідомлення з плаваючого чат-віджета на сайті."""
     source: Optional[str] = "website-chat"
+    session_id: str
     name: Optional[str] = None
     message: str
     createdAt: Optional[str] = None
+
+
+class MessageOut(BaseModel):
+    id: int
+    channel: str
+    external_id: str
+    customer_name: Optional[str] = None
+    direction: str
+    body: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ConversationOut(BaseModel):
+    channel: str
+    external_id: str
+    customer_name: Optional[str] = None
+    last_message: str
+    last_at: datetime
+    unread: bool
+
+
+class ReplyIn(BaseModel):
+    text: str
 
 
 class OrderOut(BaseModel):

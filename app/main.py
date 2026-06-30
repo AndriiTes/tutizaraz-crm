@@ -4,7 +4,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import models
 from .database import engine, run_simple_migrations
-from .routers import login, orders, webhooks
+from .routers import conversations, login, orders, webhooks
 
 models.Base.metadata.create_all(bind=engine)
 run_simple_migrations()
@@ -23,6 +23,7 @@ app.add_middleware(
 
 app.include_router(webhooks.router, tags=["webhooks"])
 app.include_router(orders.router, tags=["orders"])
+app.include_router(conversations.router, tags=["conversations"])
 app.include_router(login.router, tags=["auth"])
 
 
