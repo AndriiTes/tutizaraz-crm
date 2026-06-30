@@ -3,10 +3,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from . import models
-from .database import engine
+from .database import engine, run_simple_migrations
 from .routers import login, orders, webhooks
 
 models.Base.metadata.create_all(bind=engine)
+run_simple_migrations()
 
 app = FastAPI(title="Тут&Зараз CRM API")
 
