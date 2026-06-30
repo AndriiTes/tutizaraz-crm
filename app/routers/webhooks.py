@@ -98,6 +98,21 @@ def save_message(db: Session, channel: str, external_id: str, customer_name: str
     return msg
 
 
+def is_first_message(db: Session, channel: str, external_id: str) -> bool:
+    """
+    Перевіряє, чи це перше повідомлення в розмові (немає жодного попереднього
+    запису — ні вхідного, ні вихідного). Автовідповідь-привітання надсилається
+    лише на старті розмови, щоб не дублювалась на кожне наступне повідомлення
+    клієнта, навіть якщо оператор уже відповідає вручну.
+    """
+    exists = (
+        db.query(models.Message.id)
+        .filter(models.Message.channel == channel, models.Message.external_id == external_id)
+        .first()
+    )
+    return exists is None
+
+
 @router.post("/webhooks/website-order")
 async def website_order(payload: schemas.WebsiteOrderIn, db: Session = Depends(get_db)):
     """
@@ -172,10 +187,12 @@ async def telegram_webhook(request: Request, db: Session = Depends(get_db)):
     name_parts = [from_user.get("first_name", ""), from_user.get("last_name", "")]
     full_name = " ".join(p for p in name_parts if p).strip() or from_user.get("username") or "Telegram користувач"
 
+    first_message = is_first_message(db, "telegram", str(chat_id))
+
     save_message(db, channel="telegram", external_id=str(chat_id), customer_name=full_name,
                  direction="in", body=text, raw_payload=body)
 
-    if await send_channel_reply("telegram", str(chat_id), AUTO_REPLY_TEXT):
+    if first_message and await send_channel_reply("telegram", str(chat_id), AUTO_REPLY_TEXT):
         save_message(db, channel="telegram", external_id=str(chat_id), customer_name=full_name,
                      direction="out", body=AUTO_REPLY_TEXT)
 
@@ -197,10 +214,12 @@ async def viber_webhook(request: Request, db: Session = Depends(get_db)):
     name = sender.get("name") or "Viber користувач"
 
     if sender_id:
+        first_message = is_first_message(db, "viber", sender_id)
+
         save_message(db, channel="viber", external_id=sender_id, customer_name=name,
                      direction="in", body=text, raw_payload=body)
 
-        if await send_channel_reply("viber", sender_id, AUTO_REPLY_TEXT):
+        if first_message and await send_channel_reply("viber", sender_id, AUTO_REPLY_TEXT):
             save_message(db, channel="viber", external_id=sender_id, customer_name=name,
                          direction="out", body=AUTO_REPLY_TEXT)
 
@@ -258,10 +277,12 @@ async def whatsapp_webhook(request: Request, db: Session = Depends(get_db)):
         name = name or "WhatsApp користувач"
 
         if from_number:
+            first_message = is_first_message(db, "whatsapp", from_number)
+
             save_message(db, channel="whatsapp", external_id=from_number, customer_name=name,
                          direction="in", body=text, raw_payload=body)
 
-            if await send_channel_reply("whatsapp", from_number, AUTO_REPLY_TEXT):
+            if first_message and await send_channel_reply("whatsapp", from_number, AUTO_REPLY_TEXT):
                 save_message(db, channel="whatsapp", external_id=from_number, customer_name=name,
                              direction="out", body=AUTO_REPLY_TEXT)
     except (KeyError, IndexError, TypeError):
@@ -288,10 +309,12 @@ async def instagram_webhook(request: Request, db: Session = Depends(get_db)):
 
         text = message.get("text", "")
 
+        first_message = is_first_message(db, "instagram", sender_id)
+
         save_message(db, channel="instagram", external_id=sender_id, customer_name="Instagram користувач",
                      direction="in", body=text, raw_payload=body)
 
-        if await send_channel_reply("instagram", sender_id, AUTO_REPLY_TEXT):
+        if first_message and await send_channel_reply("instagram", sender_id, AUTO_REPLY_TEXT):
             save_message(db, channel="instagram", external_id=sender_id, customer_name="Instagram користувач",
                          direction="out", body=AUTO_REPLY_TEXT)
     except (KeyError, IndexError, TypeError):
