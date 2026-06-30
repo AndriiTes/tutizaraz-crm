@@ -61,6 +61,53 @@ const CONFIG = {
 Перезалити `script.js` на Cloudflare. Після цього форма замовлення на сайті
 реально створюватиме заявки, які з'являться в CRM-панелі.
 
+## Підключення WhatsApp + Instagram (через Meta)
+
+Обидва канали йдуть через один і той самий **Meta for Developers** App —
+бізнес-верифікація не обов'язкова для старту, Meta видає безкоштовний
+тестовий номер одразу.
+
+### 1. Створення Meta App
+
+1. Зайти на [developers.facebook.com](https://developers.facebook.com) → увійти своїм Facebook-акаунтом → **My Apps** → **Create App**.
+2. Тип застосунку — **Business**.
+3. У списку продуктів додати **WhatsApp** (і за бажанням **Instagram** — буде в розділі Messenger / Instagram).
+
+### 2. Тестовий номер WhatsApp
+
+1. У розділі **WhatsApp → API Setup** Meta вже видасть тестовий номер і **тимчасовий токен доступу** (`Temporary access token`).
+2. Знизу на тій же сторінці — **Phone number ID** (довгий числовий ID, не сам номер).
+3. Додайте свій особистий номер у список **To** (тестові отримувачі) — без цього Meta не дозволить надсилати на нього повідомлення.
+
+### 3. Змінні середовища на Render
+
+Додайте:
+- `WHATSAPP_ACCESS_TOKEN` — токен з кроку 2
+- `WHATSAPP_PHONE_NUMBER_ID` — Phone number ID з кроку 2
+- `META_VERIFY_TOKEN` — придумайте самі будь-який рядок (наприклад `tutizaraz-secret-2026`), він буде потрібен на наступному кроці
+
+### 4. Підключення вебхука
+
+1. У Meta App Dashboard → **WhatsApp → Configuration** → **Edit** біля Webhook.
+2. **Callback URL**: `https://tutizaraz-crm.onrender.com/webhooks/whatsapp`
+3. **Verify token**: той самий рядок, що ви вписали в `META_VERIFY_TOKEN` на Render.
+4. **Verify and Save** — Meta зробить GET-запит на наш сервер, бекенд автоматично підтвердить (це вже реалізовано в коді).
+5. Підпишіться на поле **messages** (Webhook fields → messages → Subscribe).
+
+### 5. Instagram (та сама Meta App)
+
+1. Підключіть Instagram-акаунт до Meta Business Suite (Settings → Instagram accounts).
+2. У Meta App Dashboard додайте продукт **Instagram** (через Messenger API for Instagram), отримайте **Page Access Token** — це і є `INSTAGRAM_ACCESS_TOKEN`.
+3. Налаштуйте webhook так само, як для WhatsApp, але:
+   - Callback URL: `https://tutizaraz-crm.onrender.com/webhooks/instagram`
+   - Verify token: той самий `META_VERIFY_TOKEN`
+   - Підпишіться на поле **messages**
+
+### 6. Тест
+
+- Напишіть з особистого WhatsApp на тестовий номер (з кроку 2.3) → перевірте CRM.
+- Напишіть в директ Instagram-акаунту → перевірте CRM.
+
 ## Важливо про безкоштовний план Render
 
 - Сервіс "засинає" після 15 хв без запитів, перший запит після паузи
