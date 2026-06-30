@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Тут&amp;Зараз — CRM</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="loginScreen" class="screen">
+  <form id="loginForm" class="login-card">
+    <h1>Тут<span class="amp">&amp;</span>Зараз</h1>
+    <p class="login-sub">Вхід у панель заявок</p>
+    <label>
+      Пароль адміністратора
+      <input type="password" id="loginPassword" required autofocus>
+    </label>
+    <button type="submit" class="btn">Увійти</button>
+    <p id="loginError" class="error"></p>
+  </form>
+</div>
+
+<div id="appScreen" class="screen" hidden>
+  <header class="topbar">
+    <h1>Тут<span class="amp">&amp;</span>Зараз — заявки</h1>
+    <div class="filters">
+      <select id="filterSource">
+        <option value="">Усі канали</option>
+        <option value="website">Сайт</option>
+        <option value="telegram">Telegram</option>
+        <option value="viber">Viber</option>
+        <option value="whatsapp">WhatsApp</option>
+        <option value="instagram">Instagram</option>
+        <option value="phone">Телефонія</option>
+      </select>
+      <select id="filterStatus">
+        <option value="">Усі статуси</option>
+        <option value="new">Нова</option>
+        <option value="confirmed">Підтверджена</option>
+        <option value="cooking">Готується</option>
+        <option value="delivering">В дорозі</option>
+        <option value="done">Виконана</option>
+        <option value="cancelled">Скасована</option>
+      </select>
+      <button id="refreshBtn" class="btn btn-ghost">Оновити</button>
+      <button id="logoutBtn" class="btn btn-ghost">Вийти</button>
+    </div>
+  </header>
+
+  <main>
+    <table class="orders-table">
+      <thead>
+        <tr>
+          <th>№</th><th>Канал</th><th>Клієнт</th><th>Телефон</th>
+          <th>Адреса</th><th>Склад</th><th>Сума</th><th>Створено</th><th>Статус</th>
+        </tr>
+      </thead>
+      <tbody id="ordersBody"></tbody>
+    </table>
+    <p id="emptyState" class="empty" hidden>Заявок не знайдено.</p>
+  </main>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
