@@ -27,24 +27,27 @@ def get_db():
 
 def run_simple_migrations():
     """
-    Легка авто-міграція без Alembic: якщо в моделі з'явилось нове поле,
-    а в реальній таблиці його ще немає (наприклад, таблицю створили
-    раніше, до того як модель оновили) — дописує відсутню колонку.
-    Розрахована на маленький проєкт, де схема міняється нечасто.
+    Легка авто-міграція: якщо в моделі з'явилось нове поле,
+    а в реальній таблиці його ще немає — дописує відсутню колонку.
+    Працює для всіх таблиць, не лише для orders.
     """
     from sqlalchemy import inspect, text
+    from . import models
 
     inspector = inspect(engine)
-    if "orders" not in inspector.get_table_names():
-        return  # таблиці ще нема — create_all() створить її одразу з усіма колонками
+    existing_tables = set(inspector.get_table_names())
 
-    existing_columns = {col["name"] for col in inspector.get_columns("orders")}
+    for table in models.Base.metadata.sorted_tables:
+        if table.name not in existing_tables:
+            continue  # таблиця нова — create_all() вже створила її повністю
 
-    from . import models  # локальний імпорт, щоб уникнути циклічної залежності
+        existing_columns = {col["name"] for col in inspector.get_columns(table.name)}
 
-    with engine.begin() as conn:
-        for column in models.Order.__table__.columns:
-            if column.name in existing_columns:
-                continue
-            col_type = column.type.compile(engine.dialect)
-            conn.execute(text(f'ALTER TABLE orders ADD COLUMN "{column.name}" {col_type}'))
+        with engine.begin() as conn:
+            for column in table.columns:
+                if column.name in existing_columns:
+                    continue
+                col_type = column.type.compile(engine.dialect)
+                conn.execute(
+                    text(f'ALTER TABLE "{table.name}" ADD COLUMN "{column.name}" {col_type}')
+                )

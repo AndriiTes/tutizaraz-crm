@@ -175,16 +175,24 @@ async def website_order(payload: schemas.WebsiteOrderIn, db: Session = Depends(g
 
 @router.post("/webhooks/website-chat")
 async def website_chat(payload: schemas.WebsiteChatIn, db: Session = Depends(get_db)):
-    """Приймає повідомлення з плаваючого чат-віджета на сайті — потрапляє в Повідомлення."""
+    """Приймає повідомлення з плаваючого чат-віджета на сайті."""
     save_message(
-        db,
-        channel="website-chat",
-        external_id=payload.session_id,
+        db, channel="website-chat", external_id=payload.session_id,
         customer_name=payload.name or "Гість із сайту",
-        direction="in",
-        body=payload.message,
-        raw_payload=payload.model_dump(),
+        direction="in", body=payload.message, raw_payload=payload.model_dump(),
     )
+    conv = db.query(models.Conversation).filter(
+        models.Conversation.channel == "website-chat",
+        models.Conversation.external_id == payload.session_id
+    ).first()
+    if not conv:
+        conv = models.Conversation(
+            channel="website-chat", external_id=payload.session_id,
+            customer_name=payload.name or "Гість із сайту", status="ai", ai_enabled=True
+        )
+        db.add(conv)
+        db.commit()
+    await handle_ai_response(db, "website-chat", payload.session_id, payload.name, payload.message)
     return {"ok": True}
 
 
@@ -229,9 +237,21 @@ async def telegram_webhook(request: Request, db: Session = Depends(get_db)):
     save_message(db, channel="telegram", external_id=str(chat_id), customer_name=full_name,
                  direction="in", body=text, raw_payload=body)
 
-    # Ініціалізуємо запис розмови якщо перший раз
-    from ..routers.conversations import get_or_create_conv
-    get_or_create_conv(db, "telegram", str(chat_id), full_name)
+    # Ініціалізуємо/оновлюємо стан розмови (без циклічного імпорту)
+    conv = db.query(models.Conversation).filter(
+        models.Conversation.channel == "telegram",
+        models.Conversation.external_id == str(chat_id)
+    ).first()
+    if not conv:
+        conv = models.Conversation(
+            channel="telegram", external_id=str(chat_id),
+            customer_name=full_name, status="ai", ai_enabled=True
+        )
+        db.add(conv)
+        db.commit()
+    elif full_name and not conv.customer_name:
+        conv.customer_name = full_name
+        db.commit()
 
     # AI-агент відповідає (або ескалює якщо не знає)
     await handle_ai_response(db, "telegram", str(chat_id), full_name, text)
