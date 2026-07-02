@@ -37,6 +37,7 @@ function showApp(){
   loadReports();
   checkAiStatus();
   startPolling();
+  loadKanban();
 }
 function showLogin(){ appScreen.hidden = true; loginScreen.hidden = false; stopPolling(); }
 
@@ -326,6 +327,8 @@ function startPolling(){
   pollTimer = setInterval(async () => {
     loadInbox();
     if(activeConv) loadThread();
+    const sec = document.querySelector(".nav-item.active")?.dataset?.section;
+    if(sec === "kanban") loadKanban();
   }, 8000);
 }
 function stopPolling(){ if(pollTimer) clearInterval(pollTimer); pollTimer = null; }
@@ -333,3 +336,80 @@ function stopPolling(){ if(pollTimer) clearInterval(pollTimer); pollTimer = null
 // ===== UTILS =====
 function esc(str){ if(!str) return str; return String(str).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }
 function fmtTime(iso){ try { return new Date(iso).toLocaleString("uk-UA",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}); } catch { return iso; } }
+
+// ===== KANBAN =====
+let draggedCard = null;
+
+document.getElementById("refreshKanban").addEventListener("click", loadKanban);
+document.getElementById("kanbanChannelFilter").addEventListener("change", loadKanban);
+
+async function loadKanban(){
+  const channel = document.getElementById("kanbanChannelFilter").value;
+  const url = "/api/conversations";
+  const res = await apiFetch(url);
+  if(!res.ok) return;
+  let convs = await res.json();
+
+  if(channel) convs = convs.filter(c => c.channel === channel);
+
+  const cols = {ai:[], human:[], sales:[], done:[]};
+  for(const c of convs){
+    const st = c.status || "ai";
+    if(cols[st]) cols[st].push(c);
+  }
+
+  for(const [status, cards] of Object.entries(cols)){
+    const col = document.getElementById("col-" + status);
+    const cnt = document.getElementById("cnt-" + status);
+    if(!col) continue;
+    cnt.textContent = cards.length;
+    col.innerHTML = cards.map(c => `
+      <div class="kanban-card" draggable="true"
+           data-ch="${c.channel}" data-eid="${esc(c.external_id)}"
+           data-status="${status}">
+        <div class="kanban-card-top">
+          <span class="kanban-card-name">${esc(c.customer_name)||"Без імені"}</span>
+          <div style="display:flex;gap:4px;align-items:center">
+            ${c.unread ? '<span class="kanban-card-unread"></span>' : ''}
+            <span class="channel-pill-small">${CH_LABELS[c.channel]||c.channel}</span>
+          </div>
+        </div>
+        <p class="kanban-card-msg">${esc(c.last_message)}</p>
+        <div class="kanban-card-footer">
+          <span class="kanban-card-time">${fmtTime(c.last_at)}</span>
+          ${c.quality_score ? `<span class="status-pill" style="background:#f3e5f5;color:#4a148c">★${c.quality_score}</span>` : ""}
+        </div>
+      </div>
+    `).join("") || '<p style="font-size:12px;color:rgba(34,27,20,.4);text-align:center;padding:16px 0">Порожньо</p>';
+
+    col.querySelectorAll(".kanban-card").forEach(card => {
+      card.addEventListener("dragstart", e => { draggedCard = card; card.classList.add("dragging"); });
+      card.addEventListener("dragend", e => { card.classList.remove("dragging"); draggedCard = null; });
+      card.addEventListener("click", () => {
+        // Відкриваємо розмову в інбоксі
+        document.querySelector('[data-section="inbox"]').click();
+        openConv(card.dataset.ch, card.dataset.eid);
+      });
+    });
+  }
+}
+
+function onDragOver(e){ e.preventDefault(); e.currentTarget.classList.add("drag-over"); }
+
+async function onDrop(e, newStatus){
+  e.preventDefault();
+  e.currentTarget.classList.remove("drag-over");
+  if(!draggedCard) return;
+  const ch = draggedCard.dataset.ch;
+  const eid = draggedCard.dataset.eid;
+  const oldStatus = draggedCard.dataset.status;
+  if(oldStatus === newStatus) return;
+  await apiFetch(`/api/conversations/${ch}/${encodeURIComponent(eid)}/escalate`, "POST", {to: newStatus});
+  await loadKanban();
+  if(newStatus === "done") setTimeout(loadReports, 3000);
+}
+
+// Прибираємо drag-over при виході
+document.querySelectorAll(".kanban-cards").forEach(col => {
+  col.addEventListener("dragleave", e => { if(!col.contains(e.relatedTarget)) col.classList.remove("drag-over"); });
+});

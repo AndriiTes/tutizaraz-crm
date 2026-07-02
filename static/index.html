@@ -35,7 +35,10 @@
         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
         Публікації
       </button>
-      <button class="nav-item" data-section="reports">
+      <button class="nav-item" data-section="kanban">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="18" rx="1"/><rect x="14" y="3" width="7" height="11" rx="1"/></svg>
+        Канбан
+      </button>
         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg>
         Звіти AI
       </button>
@@ -171,6 +174,53 @@
           <div class="channel-card-head"><span class="channel-name">Телефонія</span><span class="channel-badge pending">Налаштовується</span></div>
           <p class="channel-desc">Zadarma або інший SIP-провайдер. Дзвінки потрапляють у CRM автоматично.</p>
           <p class="channel-tip">Webhook URL: tutizaraz-crm.onrender.com/webhooks/telephony</p>
+        </div>
+      </div>
+    <!-- KANBAN -->
+    <section id="kanbanSection" class="section" hidden>
+      <div class="panel-header" style="padding:16px 24px">
+        <span class="panel-title">Канбан — розмови</span>
+        <div style="display:flex;gap:8px;align-items:center">
+          <select id="kanbanChannelFilter" class="filter-select">
+            <option value="">Всі канали</option>
+            <option value="telegram">Telegram</option>
+            <option value="website-chat">Чат на сайті</option>
+            <option value="whatsapp">WhatsApp</option>
+            <option value="instagram">Instagram</option>
+          </select>
+          <button id="refreshKanban" class="icon-btn" title="Оновити">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-.26-3.53"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="kanban-board" id="kanbanBoard">
+        <div class="kanban-col" data-status="ai">
+          <div class="kanban-col-head">
+            <span class="kanban-col-title">🤖 AI оператор</span>
+            <span class="kanban-col-count" id="cnt-ai">0</span>
+          </div>
+          <div class="kanban-cards" id="col-ai" ondragover="onDragOver(event)" ondrop="onDrop(event,'ai')"></div>
+        </div>
+        <div class="kanban-col" data-status="human">
+          <div class="kanban-col-head">
+            <span class="kanban-col-title">👤 Людина</span>
+            <span class="kanban-col-count" id="cnt-human">0</span>
+          </div>
+          <div class="kanban-cards" id="col-human" ondragover="onDragOver(event)" ondrop="onDrop(event,'human')"></div>
+        </div>
+        <div class="kanban-col" data-status="sales">
+          <div class="kanban-col-head">
+            <span class="kanban-col-title">💼 Продажі</span>
+            <span class="kanban-col-count" id="cnt-sales">0</span>
+          </div>
+          <div class="kanban-cards" id="col-sales" ondragover="onDragOver(event)" ondrop="onDrop(event,'sales')"></div>
+        </div>
+        <div class="kanban-col" data-status="done">
+          <div class="kanban-col-head">
+            <span class="kanban-col-title">✓ Завершено</span>
+            <span class="kanban-col-count" id="cnt-done">0</span>
+          </div>
+          <div class="kanban-cards" id="col-done" ondragover="onDragOver(event)" ondrop="onDrop(event,'done')"></div>
         </div>
       </div>
     </section>
