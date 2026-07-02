@@ -1,310 +1,335 @@
-const API_BASE = "";
-
+const API = "";
 let token = localStorage.getItem("tz_crm_token") || "";
-let activeConversation = null; // { channel, external_id }
-let inboxPollTimer = null;
+let activeConv = null;
+let pollTimer = null;
 
+// ===== LOGIN =====
 const loginScreen = document.getElementById("loginScreen");
 const appScreen = document.getElementById("appScreen");
+
+if(token) showApp(); else showLogin();
+
+document.getElementById("loginForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  const pwd = document.getElementById("loginPassword").value;
+  const errEl = document.getElementById("loginError");
+  errEl.textContent = "";
+  try {
+    const res = await apiFetch("/api/login", "POST", {password: pwd}, false);
+    if(!res.ok) throw new Error("bad");
+    const d = await res.json();
+    token = d.token;
+    localStorage.setItem("tz_crm_token", token);
+    showApp();
+  } catch { errEl.textContent = "Невірний пароль"; }
+});
+
+document.getElementById("logoutBtn").addEventListener("click", () => {
+  localStorage.removeItem("tz_crm_token"); token = ""; showLogin();
+});
 
 function showApp(){
   loginScreen.hidden = true;
   appScreen.hidden = false;
+  loadInbox();
   loadOrders();
-  loadConversations();
-  startInboxPolling();
+  loadPublications();
+  loadReports();
+  checkAiStatus();
+  startPolling();
 }
-function showLogin(){
-  appScreen.hidden = true;
-  loginScreen.hidden = false;
-  stopInboxPolling();
-}
+function showLogin(){ appScreen.hidden = true; loginScreen.hidden = false; stopPolling(); }
 
-if(token){ showApp(); } else { showLogin(); }
-
-document.getElementById("loginForm").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const password = document.getElementById("loginPassword").value;
-  const errorEl = document.getElementById("loginError");
-  errorEl.textContent = "";
-  try{
-    const res = await fetch(`${API_BASE}/api/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password })
-    });
-    if(!res.ok) throw new Error("bad credentials");
-    const data = await res.json();
-    token = data.token;
-    localStorage.setItem("tz_crm_token", token);
-    showApp();
-  } catch(err){
-    errorEl.textContent = "Невірний пароль";
-  }
-});
-
-document.getElementById("logoutBtn").addEventListener("click", () => {
-  localStorage.removeItem("tz_crm_token");
-  token = "";
-  showLogin();
-});
-
-function authHeaders(){
-  return { "Authorization": `Bearer ${token}` };
-}
-async function handleAuthError(res){
-  if(res.status === 401){
-    localStorage.removeItem("tz_crm_token");
-    token = "";
-    showLogin();
-    return true;
-  }
-  return false;
+async function apiFetch(path, method = "GET", body = null, auth = true){
+  const headers = {"Content-Type": "application/json"};
+  if(auth) headers["Authorization"] = "Bearer " + token;
+  const opts = {method, headers};
+  if(body) opts.body = JSON.stringify(body);
+  const res = await fetch(API + path, opts);
+  if(res.status === 401){ localStorage.removeItem("tz_crm_token"); token = ""; showLogin(); }
+  return res;
 }
 
-/* ===== Вкладки ===== */
-document.querySelectorAll(".tab-btn").forEach(btn => {
+// ===== SIDEBAR NAV =====
+document.querySelectorAll(".nav-item[data-section]").forEach(btn => {
   btn.addEventListener("click", () => {
-    document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+    document.querySelectorAll(".nav-item").forEach(b => b.classList.remove("active"));
     btn.classList.add("active");
-    const tab = btn.dataset.tab;
-    document.getElementById("ordersTab").hidden = tab !== "orders";
-    document.getElementById("inboxTab").hidden = tab !== "inbox";
+    const sec = btn.dataset.section;
+    document.querySelectorAll(".section").forEach(s => s.hidden = true);
+    document.getElementById(sec + "Section").hidden = false;
   });
 });
 
-/* ===== Заявки ===== */
-const STATUS_LABELS = {
-  new: "Нова", confirmed: "Підтверджена", cooking: "Готується",
-  delivering: "В дорозі", done: "Виконана", cancelled: "Скасована"
-};
-const SOURCE_LABELS = {
-  website: "Сайт", telegram: "Telegram", viber: "Viber",
-  whatsapp: "WhatsApp", instagram: "Instagram", phone: "Телефонія",
-  "website-chat": "Чат на сайті"
+// ===== INBOX =====
+const CH_LABELS = {telegram:"Telegram",viber:"Viber",whatsapp:"WhatsApp",instagram:"Instagram","website-chat":"Чат",phone:"Телефон"};
+const STATUS_PILLS = {
+  ai: '<span class="status-pill pill-ai">AI</span>',
+  human: '<span class="status-pill pill-human">Людина</span>',
+  sales: '<span class="status-pill pill-sales">Продажі</span>',
+  done: '<span class="status-pill pill-done">Завершено</span>',
 };
 
-document.getElementById("refreshOrdersBtn").addEventListener("click", loadOrders);
-document.getElementById("filterSource").addEventListener("change", loadOrders);
-document.getElementById("filterStatus").addEventListener("change", loadOrders);
+document.getElementById("refreshInbox").addEventListener("click", loadInbox);
+document.getElementById("convStatusFilter").addEventListener("change", loadInbox);
 
-async function loadOrders(){
-  const source = document.getElementById("filterSource").value;
-  const status = document.getElementById("filterStatus").value;
-  const params = new URLSearchParams();
-  if(source) params.set("source", source);
-  if(status) params.set("status", status);
-
-  const res = await fetch(`${API_BASE}/api/orders?${params}`, { headers: authHeaders() });
-  if(await handleAuthError(res)) return;
-  const orders = await res.json();
-  renderOrders(orders);
+async function loadInbox(){
+  const filter = document.getElementById("convStatusFilter").value;
+  const url = filter ? `/api/conversations?status=${filter}` : "/api/conversations";
+  const res = await apiFetch(url);
+  if(!res.ok) return;
+  const convs = await res.json();
+  renderConvList(convs);
+  const unread = convs.filter(c => c.unread).length;
+  const badge = document.getElementById("inboxBadge");
+  badge.hidden = unread === 0;
+  badge.textContent = unread;
 }
 
-function renderOrders(orders){
-  const body = document.getElementById("ordersBody");
-  const emptyState = document.getElementById("ordersEmptyState");
-
-  if(orders.length === 0){
-    body.innerHTML = "";
-    emptyState.hidden = false;
-    return;
-  }
-  emptyState.hidden = true;
-
-  body.innerHTML = orders.map(o => `
-    <tr>
-      <td>${o.id}</td>
-      <td>${SOURCE_LABELS[o.source] || o.source}</td>
-      <td>${escapeHtml(o.name) || "—"}</td>
-      <td>${escapeHtml(o.phone) || "—"}</td>
-      <td>${escapeHtml(o.address) || "—"}</td>
-      <td>${formatItems(o.items)}</td>
-      <td>${o.total} ₴</td>
-      <td>${new Date(o.created_at).toLocaleString("uk-UA")}</td>
-      <td>
-        <select data-order-id="${o.id}" class="status-select">
-          ${Object.entries(STATUS_LABELS).map(([val, label]) =>
-            `<option value="${val}" ${val === o.status ? "selected" : ""}>${label}</option>`
-          ).join("")}
-        </select>
-      </td>
-    </tr>
-  `).join("");
-
-  document.querySelectorAll(".status-select").forEach(sel => {
-    sel.addEventListener("change", async (e) => {
-      const id = e.target.dataset.orderId;
-      await fetch(`${API_BASE}/api/orders/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({ status: e.target.value })
-      });
-    });
-  });
-}
-
-function formatItems(items){
-  if(!items || items.length === 0) return "—";
-  return items.map(i => `${escapeHtml(i.name)} ×${i.qty}`).join(", ");
-}
-
-/* ===== Повідомлення (інбокс) ===== */
-document.getElementById("refreshInboxBtn").addEventListener("click", loadConversations);
-
-async function loadConversations(){
-  const res = await fetch(`${API_BASE}/api/conversations`, { headers: authHeaders() });
-  if(await handleAuthError(res)) return;
-  const conversations = await res.json();
-  renderConversationList(conversations);
-  updateUnreadBadge(conversations);
-}
-
-function updateUnreadBadge(conversations){
-  const count = conversations.filter(c => c.unread).length;
-  const badge = document.getElementById("unreadBadge");
-  if(count > 0){
-    badge.hidden = false;
-    badge.textContent = count;
-  } else {
-    badge.hidden = true;
-  }
-}
-
-function renderConversationList(conversations){
-  const list = document.getElementById("conversationItems");
-  const emptyState = document.getElementById("inboxEmptyState");
-
-  if(conversations.length === 0){
-    list.innerHTML = "";
-    emptyState.hidden = false;
-    return;
-  }
-  emptyState.hidden = true;
-
-  list.innerHTML = conversations.map(c => {
-    const isActive = activeConversation && activeConversation.channel === c.channel && activeConversation.external_id === c.external_id;
-    return `
-      <li class="conversation-item ${isActive ? "active" : ""} ${c.unread ? "unread" : ""}"
-          data-channel="${c.channel}" data-external-id="${escapeAttr(c.external_id)}">
-        <div class="conversation-item-top">
-          <span class="conversation-name">${escapeHtml(c.customer_name) || "Без імені"}</span>
-          <span class="conversation-channel-tag">${SOURCE_LABELS[c.channel] || c.channel}</span>
-        </div>
-        <p class="conversation-preview">${escapeHtml(c.last_message)}</p>
-        <span class="conversation-time">${new Date(c.last_at).toLocaleString("uk-UA")}</span>
-      </li>
-    `;
+function renderConvList(convs){
+  const list = document.getElementById("convList");
+  const empty = document.getElementById("convEmpty");
+  if(!convs.length){ list.innerHTML = ""; empty.hidden = false; return; }
+  empty.hidden = true;
+  list.innerHTML = convs.map(c => {
+    const isActive = activeConv && activeConv.channel === c.channel && activeConv.external_id === c.external_id;
+    return `<li class="conv-item ${isActive?"active":""} ${c.unread?"unread":""}" data-ch="${c.channel}" data-eid="${esc(c.external_id)}">
+      <div class="conv-item-top">
+        <span class="conv-name">${esc(c.customer_name)||"Без імені"}</span>
+        ${STATUS_PILLS[c.status]||""}
+      </div>
+      <p class="conv-preview">${esc(c.last_message)}</p>
+      <div class="conv-meta">
+        <span class="conv-time">${fmtTime(c.last_at)}</span>
+        <span class="channel-pill-small">${CH_LABELS[c.channel]||c.channel}</span>
+        ${c.quality_score ? `<span class="status-pill" style="background:#f3e5f5;color:#4a148c">★${c.quality_score}</span>` : ""}
+      </div>
+    </li>`;
   }).join("");
-
-  document.querySelectorAll(".conversation-item").forEach(item => {
-    item.addEventListener("click", () => {
-      openConversation(item.dataset.channel, item.dataset.externalId);
-    });
+  list.querySelectorAll(".conv-item").forEach(el => {
+    el.addEventListener("click", () => openConv(el.dataset.ch, el.dataset.eid));
   });
 }
 
-async function openConversation(channel, externalId){
-  activeConversation = { channel, external_id: externalId };
-  document.querySelectorAll(".conversation-item").forEach(item => {
-    item.classList.toggle("active", item.dataset.channel === channel && item.dataset.externalId === externalId);
-  });
+async function openConv(channel, external_id){
+  activeConv = {channel, external_id};
   await loadThread();
+  loadInbox();
 }
 
 async function loadThread(){
-  if(!activeConversation) return;
-  const { channel, external_id } = activeConversation;
-  const res = await fetch(`${API_BASE}/api/conversations/${channel}/${encodeURIComponent(external_id)}`, { headers: authHeaders() });
-  if(await handleAuthError(res)) return;
-  if(!res.ok) return;
-  const messages = await res.json();
-  renderThread(messages);
+  if(!activeConv) return;
+  const {channel, external_id} = activeConv;
+  const [msgRes, stateRes] = await Promise.all([
+    apiFetch(`/api/conversations/${channel}/${encodeURIComponent(external_id)}`),
+    apiFetch(`/api/conversations/${channel}/${encodeURIComponent(external_id)}/state`),
+  ]);
+  if(!msgRes.ok) return;
+  const messages = await msgRes.json();
+  const state = stateRes.ok ? await stateRes.json() : {status:"ai", ai_enabled: true};
+  renderThread(messages, state);
 }
 
-function renderThread(messages){
+function renderThread(messages, state){
   const panel = document.getElementById("threadPanel");
-  const channelLabel = activeConversation ? (SOURCE_LABELS[activeConversation.channel] || activeConversation.channel) : "";
-  const customerName = messages.length ? messages[messages.length - 1].customer_name : "";
+  const lastIn = messages.filter(m => m.direction==="in").pop();
+  const name = lastIn?.customer_name || "Клієнт";
+  const aiIcon = state.ai_enabled ? "🤖 AI увімкнено" : "🤖 AI вимкнено";
+  const aiClass = state.ai_enabled ? "ai-on" : "ai-off";
 
   panel.innerHTML = `
     <div class="thread-head">
-      <strong>${escapeHtml(customerName) || "Без імені"}</strong>
-      <span class="conversation-channel-tag">${channelLabel}</span>
+      <span class="thread-customer">${esc(name)}</span>
+      <div class="thread-actions">
+        <span class="ai-toggle ${aiClass}" id="aiToggle" style="cursor:pointer" title="Натисніть щоб перемкнути AI">${aiIcon}</span>
+        ${state.status !== "done" ? `
+        <div class="escalation-btns">
+          ${state.status !== "human" ? `<button class="esc-btn esc-human" onclick="escalate('human')">→ Людині</button>` : ""}
+          ${state.status !== "sales" ? `<button class="esc-btn esc-sales" onclick="escalate('sales')">→ Продажі</button>` : ""}
+          <button class="esc-btn esc-done" onclick="escalate('done')">✓ Завершити</button>
+        </div>` : '<span class="status-pill pill-done">Завершено</span>'}
+      </div>
     </div>
     <div class="thread-messages" id="threadMessages">
-      ${messages.map(m => `
-        <div class="thread-bubble ${m.direction === "out" ? "thread-bubble-out" : "thread-bubble-in"}">
-          ${escapeHtml(m.body)}
-          <span class="thread-bubble-time">${new Date(m.created_at).toLocaleTimeString("uk-UA", {hour: "2-digit", minute: "2-digit"})}</span>
-        </div>
-      `).join("")}
+      ${messages.map(m => bubbleHtml(m)).join("")}
     </div>
-    <form id="replyForm" class="reply-form">
-      <textarea id="replyText" rows="2" placeholder="Напишіть відповідь..." required></textarea>
-      <button type="submit" class="btn btn-primary">Надіслати</button>
-    </form>
-    <p id="replyStatus" class="error"></p>
+    ${state.status !== "done" ? `
+    <div class="reply-area">
+      <textarea id="replyText" rows="2" placeholder="Ваша відповідь..." onkeydown="replyKeydown(event)"></textarea>
+      <button class="btn btn-primary" onclick="sendReply()">Надіслати</button>
+    </div>
+    <p id="replyErr" class="error" style="padding:0 20px 12px"></p>` : ""}
   `;
 
-  const threadMessages = document.getElementById("threadMessages");
-  threadMessages.scrollTop = threadMessages.scrollHeight;
+  const msgs = document.getElementById("threadMessages");
+  if(msgs) msgs.scrollTop = msgs.scrollHeight;
 
-  document.getElementById("replyForm").addEventListener("submit", sendReply);
+  document.getElementById("aiToggle")?.addEventListener("click", toggleAI);
 }
 
-async function sendReply(e){
-  e.preventDefault();
-  if(!activeConversation) return;
+function bubbleHtml(m){
+  if(m.sender === "system") return `<div class="bubble bubble-out-system">${esc(m.body)}<span class="bubble-time">${fmtTime(m.created_at)}</span></div>`;
+  const dirClass = m.direction === "in" ? "bubble-in" : (m.sender === "ai" ? "bubble-out-ai" : "bubble-out-human");
+  const senderLabel = m.direction === "out" ? (m.sender === "ai" ? "AI оператор" : m.sender === "human" ? "Оператор" : "Бот") : "";
+  return `<div class="bubble ${dirClass}">
+    ${senderLabel ? `<div class="bubble-sender">${senderLabel}</div>` : ""}
+    ${esc(m.body)}
+    <span class="bubble-time">${fmtTime(m.created_at)}</span>
+  </div>`;
+}
+
+function replyKeydown(e){ if(e.key === "Enter" && (e.ctrlKey || e.metaKey)) sendReply(); }
+
+async function sendReply(){
+  if(!activeConv) return;
   const textEl = document.getElementById("replyText");
-  const text = textEl.value.trim();
+  const errEl = document.getElementById("replyErr");
+  const text = textEl?.value.trim();
   if(!text) return;
-
-  const statusEl = document.getElementById("replyStatus");
-  statusEl.textContent = "";
-  const submitBtn = e.target.querySelector("button[type=submit]");
-  submitBtn.disabled = true;
-
-  try{
-    const { channel, external_id } = activeConversation;
-    const res = await fetch(`${API_BASE}/api/conversations/${channel}/${encodeURIComponent(external_id)}/reply`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...authHeaders() },
-      body: JSON.stringify({ text })
-    });
-    if(!res.ok){
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.detail || `HTTP ${res.status}`);
-    }
-    textEl.value = "";
-    await loadThread();
-    await loadConversations();
-  } catch(err){
-    statusEl.textContent = "Не вдалось надіслати: " + err.message;
-  } finally {
-    submitBtn.disabled = false;
-  }
+  errEl.textContent = "";
+  const {channel, external_id} = activeConv;
+  const res = await apiFetch(`/api/conversations/${channel}/${encodeURIComponent(external_id)}/reply`, "POST", {text});
+  if(res.ok){ textEl.value = ""; await loadThread(); } else { errEl.textContent = "Помилка надсилання"; }
 }
 
-function startInboxPolling(){
-  stopInboxPolling();
-  inboxPollTimer = setInterval(() => {
-    loadConversations();
-    if(activeConversation) loadThread();
+async function escalate(to){
+  if(!activeConv) return;
+  const {channel, external_id} = activeConv;
+  await apiFetch(`/api/conversations/${channel}/${encodeURIComponent(external_id)}/escalate`, "POST", {to});
+  await loadThread();
+  loadInbox();
+  if(to === "done") setTimeout(loadReports, 3000);
+}
+
+async function toggleAI(){
+  if(!activeConv) return;
+  const {channel, external_id} = activeConv;
+  await apiFetch(`/api/conversations/${channel}/${encodeURIComponent(external_id)}/toggle-ai`, "POST", {});
+  await loadThread();
+}
+
+// ===== ORDERS =====
+const ORD_STATUS = {new:"Нова",confirmed:"Підтверджена",cooking:"Готується",delivering:"В дорозі",done:"Виконана",cancelled:"Скасована"};
+document.getElementById("refreshOrders").addEventListener("click", loadOrders);
+document.getElementById("filterStatus").addEventListener("change", loadOrders);
+
+async function loadOrders(){
+  const st = document.getElementById("filterStatus").value;
+  const url = st ? `/api/orders?status=${st}` : "/api/orders";
+  const res = await apiFetch(url);
+  if(!res.ok) return;
+  const orders = await res.json();
+  const body = document.getElementById("ordersBody");
+  const empty = document.getElementById("ordersEmpty");
+  if(!orders.length){ body.innerHTML = ""; empty.hidden = false; return; }
+  empty.hidden = true;
+  body.innerHTML = orders.map(o => `<tr>
+    <td>${o.id}</td><td>${esc(o.name)||"—"}</td><td>${esc(o.phone)||"—"}</td>
+    <td>${esc(o.address)||"—"}</td>
+    <td>${(o.items||[]).map(i=>`${esc(i.name)} ×${i.qty}`).join(", ")||"—"}</td>
+    <td>${o.total} ₴</td><td>${fmtTime(o.created_at)}</td>
+    <td><select class="status-select" data-id="${o.id}" onchange="changeOrderStatus(this)">
+      ${Object.entries(ORD_STATUS).map(([v,l])=>`<option value="${v}" ${v===o.status?"selected":""}>${l}</option>`).join("")}
+    </select></td>
+  </tr>`).join("");
+}
+
+async function changeOrderStatus(sel){
+  await apiFetch(`/api/orders/${sel.dataset.id}`, "PATCH", {status: sel.value});
+}
+
+// ===== PUBLISH =====
+document.getElementById("publishBtn").addEventListener("click", async () => {
+  const text = document.getElementById("pubText").value.trim();
+  const image_url = document.getElementById("pubImage").value.trim() || null;
+  const channels = [...document.querySelectorAll(".channel-checks input:checked")].map(c=>c.value);
+  const statusEl = document.getElementById("pubStatus");
+  statusEl.textContent = ""; statusEl.className = "form-status";
+  if(!text){ statusEl.textContent = "Введіть текст"; statusEl.classList.add("err"); return; }
+  if(!channels.length){ statusEl.textContent = "Оберіть хоча б один канал"; statusEl.classList.add("err"); return; }
+  document.getElementById("publishBtn").disabled = true;
+  const res = await apiFetch("/api/publications", "POST", {channels, text, image_url});
+  document.getElementById("publishBtn").disabled = false;
+  if(res.ok){
+    const pub = await res.json();
+    const allOk = Object.values(pub.results||{}).every(r=>r.ok);
+    statusEl.textContent = allOk ? "Опубліковано!" : "Частково опубліковано (перевірте результати)";
+    statusEl.classList.add(allOk ? "ok" : "err");
+    document.getElementById("pubText").value = "";
+    loadPublications();
+  } else { statusEl.textContent = "Помилка публікації"; statusEl.classList.add("err"); }
+});
+
+async function loadPublications(){
+  const res = await apiFetch("/api/publications");
+  if(!res.ok) return;
+  const pubs = await res.json();
+  const list = document.getElementById("pubList");
+  list.innerHTML = pubs.slice(0,10).map(p => {
+    const allOk = Object.values(p.results||{}).every(r=>r.ok);
+    return `<li class="pub-item">
+      <div class="pub-item-top">
+        <span>${p.channels.join(", ")}</span>
+        <span class="${allOk?"pub-status-ok":"pub-status-partial"}">${allOk?"Опубліковано":"Частково"}</span>
+      </div>
+      <div style="font-size:13px;color:rgba(34,27,20,.7)">${esc(p.text.slice(0,80))}${p.text.length>80?"...":""}</div>
+    </li>`;
+  }).join("") || "<li style='font-size:13px;color:rgba(34,27,20,.5)'>Публікацій ще немає</li>";
+}
+
+// ===== REPORTS =====
+document.getElementById("refreshReports").addEventListener("click", loadReports);
+
+async function loadReports(){
+  const res = await apiFetch("/api/reports/quality");
+  if(!res.ok) return;
+  const reports = await res.json();
+  const container = document.getElementById("reportsList");
+  const empty = document.getElementById("reportsEmpty");
+  if(!reports.length){ container.innerHTML = ""; empty.hidden = false; return; }
+  empty.hidden = true;
+  container.innerHTML = reports.map(r => {
+    const scoreClass = r.score >= 8 ? "score-hi" : r.score >= 5 ? "score-mid" : "score-lo";
+    return `<div class="report-card">
+      <div class="report-header">
+        <div>
+          <div style="font-size:15px;font-weight:700">${esc(r.customer_name)||"Невідомий клієнт"}</div>
+          <div style="font-size:12px;opacity:.6">${CH_LABELS[r.channel]||r.channel} · ${r.external_id}</div>
+        </div>
+        <div class="${scoreClass} score-circle">${r.score}</div>
+      </div>
+      <div class="report-section"><strong>Висновок</strong>${esc(r.summary)}</div>
+      ${r.strengths?.length ? `<div class="report-section"><strong>Сильні сторони</strong><ul>${r.strengths.map(s=>`<li>${esc(s)}</li>`).join("")}</ul></div>` : ""}
+      ${r.improvements?.length ? `<div class="report-section"><strong>Покращення</strong><ul>${r.improvements.map(s=>`<li>${esc(s)}</li>`).join("")}</ul></div>` : ""}
+      ${r.operator_feedback ? `<div class="report-section"><strong>Фідбек оператору</strong>${esc(r.operator_feedback)}</div>` : ""}
+    </div>`;
+  }).join("");
+}
+
+// ===== AI STATUS CHECK =====
+async function checkAiStatus(){
+  const badge = document.getElementById("aiStatusBadge");
+  try {
+    const res = await fetch("https://api.anthropic.com/v1/models", {headers:{"x-api-key":"test","anthropic-version":"2023-06-01"}});
+    if(res.status === 401) {
+      badge.textContent = "Потрібен API ключ";
+      badge.className = "channel-badge pending";
+    }
+  } catch { badge.textContent = "Перевірте ключ"; badge.className = "channel-badge pending"; }
+  const res2 = await apiFetch("/health");
+  if(res2.ok){ badge.textContent = "Сервер OK"; badge.className = "channel-badge ok"; }
+}
+
+// ===== POLLING =====
+function startPolling(){
+  stopPolling();
+  pollTimer = setInterval(async () => {
+    loadInbox();
+    if(activeConv) loadThread();
   }, 8000);
 }
-function stopInboxPolling(){
-  if(inboxPollTimer) clearInterval(inboxPollTimer);
-  inboxPollTimer = null;
-}
+function stopPolling(){ if(pollTimer) clearInterval(pollTimer); pollTimer = null; }
 
-/* ===== Допоміжне ===== */
-function escapeHtml(str){
-  if(!str) return str;
-  return String(str).replace(/[&<>"']/g, ch => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
-  }[ch]));
-}
-function escapeAttr(str){
-  return escapeHtml(str);
-}
+// ===== UTILS =====
+function esc(str){ if(!str) return str; return String(str).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }
+function fmtTime(iso){ try { return new Date(iso).toLocaleString("uk-UA",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}); } catch { return iso; } }

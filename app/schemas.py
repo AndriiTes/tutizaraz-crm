@@ -19,7 +19,6 @@ class OrderItemIn(BaseModel):
 
 
 class WebsiteOrderIn(BaseModel):
-    """Формат, який надсилає форма сайту (script.js -> CONFIG.WEBHOOK_URL)."""
     source: Optional[str] = "website"
     customer: Customer
     items: List[OrderItemIn] = []
@@ -28,7 +27,6 @@ class WebsiteOrderIn(BaseModel):
 
 
 class WebsiteChatIn(BaseModel):
-    """Формат повідомлення з плаваючого чат-віджета на сайті."""
     source: Optional[str] = "website-chat"
     session_id: str
     name: Optional[str] = None
@@ -42,6 +40,7 @@ class MessageOut(BaseModel):
     external_id: str
     customer_name: Optional[str] = None
     direction: str
+    sender: Optional[str] = "bot"
     body: str
     created_at: datetime
 
@@ -56,10 +55,62 @@ class ConversationOut(BaseModel):
     last_message: str
     last_at: datetime
     unread: bool
+    status: Optional[str] = "ai"
+    quality_score: Optional[int] = None
+
+
+class ConversationStateOut(BaseModel):
+    id: int
+    channel: str
+    external_id: str
+    customer_name: Optional[str] = None
+    status: str
+    ai_enabled: bool
+    assigned_to: Optional[str] = None
+    quality_score: Optional[int] = None
+    quality_report: Optional[str] = None
+
+    class Config:
+        from_attributes = True
 
 
 class ReplyIn(BaseModel):
     text: str
+
+
+class StatusUpdate(BaseModel):
+    status: str
+
+
+class EscalateIn(BaseModel):
+    to: str
+    note: Optional[str] = None
+
+
+class PublicationIn(BaseModel):
+    channels: List[str]
+    text: str
+    image_url: Optional[str] = None
+
+
+class PublicationOut(BaseModel):
+    id: int
+    channels: List[str]
+    text: str
+    status: str
+    results: Optional[Any] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class LoginIn(BaseModel):
+    password: str
+
+
+class LoginOut(BaseModel):
+    token: str
 
 
 class OrderOut(BaseModel):
@@ -77,15 +128,3 @@ class OrderOut(BaseModel):
 
     class Config:
         from_attributes = True
-
-
-class StatusUpdate(BaseModel):
-    status: str
-
-
-class LoginIn(BaseModel):
-    password: str
-
-
-class LoginOut(BaseModel):
-    token: str

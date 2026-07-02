@@ -14,7 +14,6 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 VIBER_BOT_TOKEN = os.getenv("VIBER_BOT_TOKEN", "")
 PUBLIC_BACKEND_URL = os.getenv("PUBLIC_BACKEND_URL", "https://tutizaraz-crm.onrender.com")
 
-# Спільний для WhatsApp і Instagram, обидва йдуть через Meta Graph API
 META_VERIFY_TOKEN = os.getenv("META_VERIFY_TOKEN", "")
 META_GRAPH_VERSION = "v20.0"
 
@@ -23,7 +22,44 @@ WHATSAPP_PHONE_NUMBER_ID = os.getenv("WHATSAPP_PHONE_NUMBER_ID", "")
 
 INSTAGRAM_ACCESS_TOKEN = os.getenv("INSTAGRAM_ACCESS_TOKEN", "")
 
-AUTO_REPLY_TEXT = "Дякуємо за звернення! Ми вже бачимо ваше повідомлення і скоро зв'яжемось з вами. 🍔"
+AUTO_REPLY_TEXT = "Дякуємо за звернення! Ми вже бачимо ваше повідомлення і скоро зв'яжемось з вами."
+
+
+async def handle_ai_response(db: Session, channel: str, external_id: str,
+                              customer_name: str | None, text: str):
+    """
+    Перевіряє чи AI-агент активний для цієї розмови і намагається відповісти.
+    Якщо не знає відповіді — ескалує до людини (статус "human").
+    Викликається асинхронно після збереження вхідного повідомлення.
+    """
+    from ..ai_agent import ai_respond
+
+    conv = (
+        db.query(models.Conversation)
+        .filter(models.Conversation.channel == channel, models.Conversation.external_id == external_id)
+        .first()
+    )
+    if not conv or not conv.ai_enabled:
+        return
+
+    result = await ai_respond(db, channel, external_id, customer_name, text)
+
+    if result.get("can_answer") and result.get("response"):
+        reply_text = result["response"]
+        await send_channel_reply(channel, external_id, reply_text)
+        save_message(db, channel=channel, external_id=external_id,
+                     customer_name=customer_name, direction="out",
+                     body=reply_text, sender="ai")
+    else:
+        # AI не знає відповіді — ескалюємо до людини
+        conv.status = "human"
+        conv.ai_enabled = False
+        db.commit()
+        reason = result.get("reason", "невідоме питання")
+        save_message(db, channel=channel, external_id=external_id,
+                     customer_name=customer_name, direction="out",
+                     body=f"[Система] AI не зміг відповісти ({reason}). Передано оператору.",
+                     sender="system")
 
 
 async def send_channel_reply(channel: str, external_id: str, text: str) -> bool:
@@ -83,12 +119,13 @@ async def send_channel_reply(channel: str, external_id: str, text: str) -> bool:
 
 
 def save_message(db: Session, channel: str, external_id: str, customer_name: str | None,
-                  direction: str, body: str, raw_payload: dict | None = None) -> models.Message:
+                  direction: str, body: str, sender: str = "bot", raw_payload: dict | None = None) -> models.Message:
     msg = models.Message(
         channel=channel,
         external_id=external_id,
         customer_name=customer_name,
         direction=direction,
+        sender=sender,
         body=body,
         raw_payload=raw_payload,
     )
@@ -192,9 +229,12 @@ async def telegram_webhook(request: Request, db: Session = Depends(get_db)):
     save_message(db, channel="telegram", external_id=str(chat_id), customer_name=full_name,
                  direction="in", body=text, raw_payload=body)
 
-    if first_message and await send_channel_reply("telegram", str(chat_id), AUTO_REPLY_TEXT):
-        save_message(db, channel="telegram", external_id=str(chat_id), customer_name=full_name,
-                     direction="out", body=AUTO_REPLY_TEXT)
+    # Ініціалізуємо запис розмови якщо перший раз
+    from ..routers.conversations import get_or_create_conv
+    get_or_create_conv(db, "telegram", str(chat_id), full_name)
+
+    # AI-агент відповідає (або ескалює якщо не знає)
+    await handle_ai_response(db, "telegram", str(chat_id), full_name, text)
 
     return {"ok": True}
 

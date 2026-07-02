@@ -3,80 +3,178 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Тут&amp;Зараз — CRM</title>
+<title>Тут&Зараз — CRM</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
 <div id="loginScreen" class="screen">
   <form id="loginForm" class="login-card">
-    <h1>Тут<span class="amp">&amp;</span>Зараз</h1>
-    <p class="login-sub">Вхід у панель</p>
-    <label>
-      Пароль адміністратора
-      <input type="password" id="loginPassword" required autofocus>
-    </label>
-    <button type="submit" class="btn">Увійти</button>
+    <div class="login-logo">Тут<span class="amp">&amp;</span>Зараз</div>
+    <p class="login-sub">Панель управління</p>
+    <label>Пароль<input type="password" id="loginPassword" required autofocus></label>
+    <button type="submit" class="btn btn-primary">Увійти</button>
     <p id="loginError" class="error"></p>
   </form>
 </div>
 
-<div id="appScreen" class="screen" hidden>
-  <header class="topbar">
-    <h1>Тут<span class="amp">&amp;</span>Зараз</h1>
-    <nav class="tabs">
-      <button class="tab-btn active" data-tab="orders">Заявки</button>
-      <button class="tab-btn" data-tab="inbox">Повідомлення <span class="unread-badge" id="unreadBadge" hidden>0</span></button>
+<div id="appScreen" class="app-layout" hidden>
+  <aside class="sidebar">
+    <div class="sidebar-logo">Тут<span class="amp">&amp;</span>Зараз</div>
+    <nav class="sidebar-nav">
+      <button class="nav-item active" data-section="inbox">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        Повідомлення
+        <span class="nav-badge" id="inboxBadge" hidden>0</span>
+      </button>
+      <button class="nav-item" data-section="orders">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        Заявки
+      </button>
+      <button class="nav-item" data-section="publish">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+        Публікації
+      </button>
+      <button class="nav-item" data-section="reports">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg>
+        Звіти AI
+      </button>
+      <button class="nav-item" data-section="settings">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        Налаштування
+      </button>
     </nav>
-    <button id="logoutBtn" class="btn btn-ghost">Вийти</button>
-  </header>
+    <button id="logoutBtn" class="nav-item nav-logout">
+      <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      Вийти
+    </button>
+  </aside>
 
-  <!-- ===== ЗАЯВКИ ===== -->
-  <section id="ordersTab" class="tab-panel">
-    <div class="panel-toolbar">
-      <select id="filterSource">
-        <option value="">Усі канали</option>
-        <option value="website">Сайт</option>
-        <option value="phone">Телефонія</option>
-      </select>
-      <select id="filterStatus">
-        <option value="">Усі статуси</option>
-        <option value="new">Нова</option>
-        <option value="confirmed">Підтверджена</option>
-        <option value="cooking">Готується</option>
-        <option value="delivering">В дорозі</option>
-        <option value="done">Виконана</option>
-        <option value="cancelled">Скасована</option>
-      </select>
-      <button id="refreshOrdersBtn" class="btn btn-ghost">Оновити</button>
-    </div>
-    <table class="orders-table">
-      <thead>
-        <tr>
-          <th>№</th><th>Канал</th><th>Клієнт</th><th>Телефон</th>
-          <th>Адреса</th><th>Склад</th><th>Сума</th><th>Створено</th><th>Статус</th>
-        </tr>
-      </thead>
-      <tbody id="ordersBody"></tbody>
-    </table>
-    <p id="ordersEmptyState" class="empty" hidden>Заявок не знайдено.</p>
-  </section>
-
-  <!-- ===== ПОВІДОМЛЕННЯ (ІНБОКС) ===== -->
-  <section id="inboxTab" class="tab-panel" hidden>
-    <div class="inbox-layout">
-      <div class="conversation-list">
-        <div class="panel-toolbar">
-          <button id="refreshInboxBtn" class="btn btn-ghost btn-small">Оновити</button>
+  <main class="content">
+    <!-- INBOX -->
+    <section id="inboxSection" class="section">
+      <div class="inbox-layout">
+        <div class="conv-list-panel">
+          <div class="panel-header">
+            <span class="panel-title">Розмови</span>
+            <div style="display:flex;gap:8px;align-items:center">
+              <select id="convStatusFilter" class="filter-select">
+                <option value="">Всі</option>
+                <option value="ai">AI</option>
+                <option value="human">Людина</option>
+                <option value="sales">Продажі</option>
+                <option value="done">Завершені</option>
+              </select>
+              <button id="refreshInbox" class="icon-btn" title="Оновити">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-.26-3.53"/></svg>
+              </button>
+            </div>
+          </div>
+          <ul id="convList"></ul>
+          <p id="convEmpty" class="empty-state" hidden>Розмов немає</p>
         </div>
-        <ul id="conversationItems"></ul>
-        <p id="inboxEmptyState" class="empty" hidden>Повідомлень ще немає.</p>
+        <div class="thread-panel" id="threadPanel">
+          <div class="thread-placeholder">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width:48px;height:48px;opacity:.3"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            <p>Оберіть розмову</p>
+          </div>
+        </div>
       </div>
-      <div class="conversation-thread" id="threadPanel">
-        <p class="thread-placeholder">Оберіть розмову зліва, щоб побачити переписку.</p>
+    </section>
+
+    <!-- ORDERS -->
+    <section id="ordersSection" class="section" hidden>
+      <div class="panel-header" style="padding:16px 24px;">
+        <span class="panel-title">Заявки з сайту</span>
+        <div style="display:flex;gap:8px">
+          <select id="filterStatus" class="filter-select">
+            <option value="">Всі статуси</option>
+            <option value="new">Нова</option>
+            <option value="confirmed">Підтверджена</option>
+            <option value="cooking">Готується</option>
+            <option value="delivering">В дорозі</option>
+            <option value="done">Виконана</option>
+            <option value="cancelled">Скасована</option>
+          </select>
+          <button id="refreshOrders" class="icon-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-.26-3.53"/></svg></button>
+        </div>
       </div>
-    </div>
-  </section>
+      <div style="overflow-x:auto;padding:0 24px 24px">
+        <table class="data-table"><thead><tr><th>№</th><th>Клієнт</th><th>Телефон</th><th>Адреса</th><th>Склад</th><th>Сума</th><th>Дата</th><th>Статус</th></tr></thead>
+        <tbody id="ordersBody"></tbody></table>
+        <p id="ordersEmpty" class="empty-state" hidden>Заявок немає</p>
+      </div>
+    </section>
+
+    <!-- PUBLISH -->
+    <section id="publishSection" class="section" hidden>
+      <div class="panel-header" style="padding:16px 24px"><span class="panel-title">Нова публікація</span></div>
+      <div style="padding:0 24px 24px;display:grid;grid-template-columns:1fr 1.2fr;gap:24px;align-items:start">
+        <div class="card">
+          <label class="field-label">Текст публікації<textarea id="pubText" rows="6" placeholder="Текст посту..."></textarea></label>
+          <label class="field-label">Зображення (URL, необов'язково)<input type="url" id="pubImage" placeholder="https://..."></label>
+          <label class="field-label">Канали</label>
+          <div class="channel-checks">
+            <label class="check-label"><input type="checkbox" value="telegram" checked> Telegram</label>
+            <label class="check-label disabled"><input type="checkbox" value="instagram" disabled> Instagram (не підключено)</label>
+            <label class="check-label disabled"><input type="checkbox" value="whatsapp" disabled> WhatsApp (не підключено)</label>
+          </div>
+          <button id="publishBtn" class="btn btn-primary" style="margin-top:16px">Опублікувати</button>
+          <p id="pubStatus" class="form-status"></p>
+        </div>
+        <div>
+          <div class="panel-header" style="padding:0 0 12px"><span class="panel-title">Останні публікації</span></div>
+          <ul id="pubList" class="pub-list"></ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- REPORTS -->
+    <section id="reportsSection" class="section" hidden>
+      <div class="panel-header" style="padding:16px 24px">
+        <span class="panel-title">Звіти контролю якості AI</span>
+        <button id="refreshReports" class="icon-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-.26-3.53"/></svg></button>
+      </div>
+      <div style="padding:0 24px 24px"><div id="reportsList"></div><p id="reportsEmpty" class="empty-state" hidden>Звітів ще немає. Завершіть розмову (статус "Завершено") щоб AI проаналізував її.</p></div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section id="settingsSection" class="section" hidden>
+      <div class="panel-header" style="padding:16px 24px"><span class="panel-title">Налаштування каналів</span></div>
+      <div style="padding:0 24px 24px;display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px">
+        <div class="channel-card connected">
+          <div class="channel-card-head"><span class="channel-name">Telegram</span><span class="channel-badge ok">Підключено</span></div>
+          <p class="channel-desc">Бот приймає повідомлення і відповідає через AI або оператора.</p>
+          <p class="channel-tip">Токен задано в Render → Environment → TELEGRAM_BOT_TOKEN</p>
+        </div>
+        <div class="channel-card">
+          <div class="channel-card-head"><span class="channel-name">WhatsApp</span><span class="channel-badge pending">Очікує Meta</span></div>
+          <p class="channel-desc">Потребує підтвердження Business Portfolio в Meta Developers.</p>
+          <p class="channel-tip">Код готовий. Коли отримаєте токени — додайте WHATSAPP_ACCESS_TOKEN та WHATSAPP_PHONE_NUMBER_ID на Render.</p>
+        </div>
+        <div class="channel-card">
+          <div class="channel-card-head"><span class="channel-name">Instagram</span><span class="channel-badge pending">Очікує Meta</span></div>
+          <p class="channel-desc">Той самий Meta App що й WhatsApp — підключиться разом.</p>
+          <p class="channel-tip">Код готовий. Додайте INSTAGRAM_ACCESS_TOKEN на Render.</p>
+        </div>
+        <div class="channel-card">
+          <div class="channel-card-head"><span class="channel-name">Viber</span><span class="channel-badge pending">Платна підписка</span></div>
+          <p class="channel-desc">Viber вимагає комерційну угоду (€100/міс) з 2024 року.</p>
+          <p class="channel-tip">Код готовий. Як отримаєте токен — додайте VIBER_BOT_TOKEN на Render і відкрийте /admin/setup-viber-webhook.</p>
+        </div>
+        <div class="channel-card">
+          <div class="channel-card-head"><span class="channel-name">AI Оператор</span><span class="channel-badge" id="aiStatusBadge">Перевірка...</span></div>
+          <p class="channel-desc">Claude автоматично відповідає на вхідні повідомлення і ескалює до людини якщо не знає відповіді.</p>
+          <p class="channel-tip">Додайте ANTHROPIC_API_KEY на Render для активації.</p>
+        </div>
+        <div class="channel-card">
+          <div class="channel-card-head"><span class="channel-name">Телефонія</span><span class="channel-badge pending">Налаштовується</span></div>
+          <p class="channel-desc">Zadarma або інший SIP-провайдер. Дзвінки потрапляють у CRM автоматично.</p>
+          <p class="channel-tip">Webhook URL: tutizaraz-crm.onrender.com/webhooks/telephony</p>
+        </div>
+      </div>
+    </section>
+  </main>
 </div>
 
 <script src="app.js"></script>

@@ -2,18 +2,15 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from . import models
+from .models import Base
 from .database import engine, run_simple_migrations
-from .routers import conversations, login, orders, webhooks
+from .routers import conversations, login, orders, publish, webhooks
 
-models.Base.metadata.create_all(bind=engine)
+Base.metadata.create_all(bind=engine)
 run_simple_migrations()
 
 app = FastAPI(title="Тут&Зараз CRM API")
 
-# TODO: коли сайт matиме постійний домен — звузити allow_origins
-# до конкретної адреси замість "*" (зараз дозволено все, щоб
-# не блокувати тестування з тимчасових *.pages.dev / *.workers.dev адрес).
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -24,6 +21,7 @@ app.add_middleware(
 app.include_router(webhooks.router, tags=["webhooks"])
 app.include_router(orders.router, tags=["orders"])
 app.include_router(conversations.router, tags=["conversations"])
+app.include_router(publish.router, tags=["publications"])
 app.include_router(login.router, tags=["auth"])
 
 
@@ -32,6 +30,4 @@ def health():
     return {"status": "ok"}
 
 
-# CRM-панель (статичні файли) — віддається з того ж сервісу на тому ж домені,
-# що й API, тому ніякого окремого хостингу для адмінки не потрібно.
 app.mount("/", StaticFiles(directory="static", html=True), name="static")
