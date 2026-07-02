@@ -4,8 +4,25 @@ from typing import Optional
 
 import httpx
 
+# Groq — безкоштовна альтернатива з Llama 3.3 70B.
+# Якщо задано ANTHROPIC_API_KEY — використовуємо Claude (платно).
+# Якщо задано GROQ_API_KEY — використовуємо Groq/Llama (безкоштовно).
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-AI_MODEL = "claude-sonnet-4-6"
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+
+# Визначаємо провайдера автоматично
+if ANTHROPIC_API_KEY:
+    _PROVIDER = "anthropic"
+    _MODEL = "claude-sonnet-4-6"
+    _API_URL = "https://api.anthropic.com/v1/messages"
+elif GROQ_API_KEY:
+    _PROVIDER = "groq"
+    _MODEL = "llama-3.3-70b-versatile"
+    _API_URL = "https://api.groq.com/openai/v1/chat/completions"
+else:
+    _PROVIDER = "none"
+    _MODEL = ""
+    _API_URL = ""
 
 AI_OPERATOR_SYSTEM = """Ти — AI-оператор служби доставки їжі «Тут&Зараз» у Тернополі.
 Твоя роль: відповідати на питання клієнтів швидко, ввічливо і по суті.
@@ -54,8 +71,8 @@ AI_QUALITY_SYSTEM = """Ти — AI-контролер якості служби 
 
 
 async def ai_respond(db, channel: str, external_id: str, customer_name: Optional[str], incoming_text: str) -> dict:
-    if not ANTHROPIC_API_KEY:
-        return {"can_answer": False, "response": "", "reason": "ANTHROPIC_API_KEY не задано"}
+    if _PROVIDER == "none":
+        return {"can_answer": False, "response": "", "reason": "Не задано API ключ (GROQ_API_KEY або ANTHROPIC_API_KEY)"}
 
     from app.models import Message
     history = (
@@ -74,47 +91,76 @@ async def ai_respond(db, channel: str, external_id: str, customer_name: Optional
     messages_payload.append({"role": "user", "content": incoming_text})
 
     try:
-        async with httpx.AsyncClient(timeout=20) as client:
-            res = await client.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={
-                    "x-api-key": ANTHROPIC_API_KEY,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json",
-                },
-                json={
-                    "model": AI_MODEL,
-                    "max_tokens": 500,
-                    "system": AI_OPERATOR_SYSTEM,
-                    "messages": messages_payload,
-                },
-            )
-        data = res.json()
-
-        # Перевіряємо чи API повернуло помилку (401, 400 тощо)
-        if "error" in data:
-            err = data["error"]
-            reason = f'{err.get("type", "api_error")}: {err.get("message", str(err))}'
-            return {"can_answer": False, "response": "", "reason": reason}
-
-        if "content" not in data or not data["content"]:
-            return {"can_answer": False, "response": "", "reason": f"Порожня відповідь API (HTTP {res.status_code})"}
-
-        raw = data["content"][0]["text"]
-        clean = raw.strip()
-        # Прибираємо можливі markdown-огорожки з JSON
-        if "```" in clean:
-            clean = clean.split("```")[-2] if clean.count("```") >= 2 else clean.replace("```json", "").replace("```", "")
-        clean = clean.strip()
-        return json.loads(clean)
-    except json.JSONDecodeError as e:
-        return {"can_answer": False, "response": "", "reason": f"Не вдалось розібрати відповідь AI: {e}"}
+        if _PROVIDER == "anthropic":
+            return await _call_anthropic(messages_payload, AI_OPERATOR_SYSTEM, 500)
+        else:
+            return await _call_groq(messages_payload, AI_OPERATOR_SYSTEM, 500)
     except Exception as e:
         return {"can_answer": False, "response": "", "reason": str(e)}
 
 
+async def _call_anthropic(messages: list, system: str, max_tokens: int) -> dict:
+    async with httpx.AsyncClient(timeout=20) as client:
+        res = await client.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            json={"model": "claude-sonnet-4-6", "max_tokens": max_tokens,
+                  "system": system, "messages": messages},
+        )
+    data = res.json()
+    if "error" in data:
+        err = data["error"]
+        return {"can_answer": False, "response": "", "reason": f'{err.get("type")}: {err.get("message")}'}
+    if "content" not in data or not data["content"]:
+        return {"can_answer": False, "response": "", "reason": f"Порожня відповідь (HTTP {res.status_code})"}
+    return _parse_json_response(data["content"][0]["text"])
+
+
+async def _call_groq(messages: list, system: str, max_tokens: int) -> dict:
+    # Groq використовує OpenAI-сумісний формат: system передається як перше повідомлення
+    full_messages = [{"role": "system", "content": system}] + messages
+    async with httpx.AsyncClient(timeout=20) as client:
+        res = await client.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {GROQ_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={"model": _MODEL, "max_tokens": max_tokens,
+                  "messages": full_messages},
+        )
+    data = res.json()
+    if "error" in data:
+        err = data["error"]
+        return {"can_answer": False, "response": "", "reason": str(err.get("message", err))}
+    if "choices" not in data or not data["choices"]:
+        return {"can_answer": False, "response": "", "reason": f"Порожня відповідь Groq (HTTP {res.status_code})"}
+    return _parse_json_response(data["choices"][0]["message"]["content"])
+
+
+def _parse_json_response(raw: str) -> dict:
+    clean = raw.strip()
+    if "```" in clean:
+        parts = clean.split("```")
+        for part in parts:
+            stripped = part.lstrip("json").strip()
+            if stripped.startswith("{"):
+                clean = stripped
+                break
+    clean = clean.strip()
+    try:
+        return json.loads(clean)
+    except json.JSONDecodeError:
+        # Якщо модель не дотрималась JSON-формату — вважаємо що відповідь є
+        return {"can_answer": True, "response": clean, "reason": ""}
+
+
 async def run_quality_check(db, channel: str, external_id: str) -> dict:
-    if not ANTHROPIC_API_KEY:
+    if _PROVIDER == "none":
         return {}
 
     from app.models import Message, Conversation
@@ -133,25 +179,14 @@ async def run_quality_check(db, channel: str, external_id: str) -> dict:
     )
 
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            res = await client.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={
-                    "x-api-key": ANTHROPIC_API_KEY,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json",
-                },
-                json={
-                    "model": AI_MODEL,
-                    "max_tokens": 800,
-                    "system": AI_QUALITY_SYSTEM,
-                    "messages": [{"role": "user", "content": f"Проаналізуй:\n\n{transcript}"}],
-                },
-            )
-        data = res.json()
-        raw = data["content"][0]["text"]
-        clean = raw.strip().lstrip("```json").rstrip("```").strip()
-        report = json.loads(clean)
+        user_msg = [{"role": "user", "content": f"Проаналізуй:\n\n{transcript}"}]
+        if _PROVIDER == "anthropic":
+            report = await _call_anthropic(user_msg, AI_QUALITY_SYSTEM, 800)
+        else:
+            report = await _call_groq(user_msg, AI_QUALITY_SYSTEM, 800)
+
+        if not isinstance(report, dict) or "score" not in report:
+            return report
 
         conv = (
             db.query(Conversation)
