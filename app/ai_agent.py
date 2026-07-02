@@ -90,9 +90,25 @@ async def ai_respond(db, channel: str, external_id: str, customer_name: Optional
                 },
             )
         data = res.json()
+
+        # Перевіряємо чи API повернуло помилку (401, 400 тощо)
+        if "error" in data:
+            err = data["error"]
+            reason = f'{err.get("type", "api_error")}: {err.get("message", str(err))}'
+            return {"can_answer": False, "response": "", "reason": reason}
+
+        if "content" not in data or not data["content"]:
+            return {"can_answer": False, "response": "", "reason": f"Порожня відповідь API (HTTP {res.status_code})"}
+
         raw = data["content"][0]["text"]
-        clean = raw.strip().lstrip("```json").rstrip("```").strip()
+        clean = raw.strip()
+        # Прибираємо можливі markdown-огорожки з JSON
+        if "```" in clean:
+            clean = clean.split("```")[-2] if clean.count("```") >= 2 else clean.replace("```json", "").replace("```", "")
+        clean = clean.strip()
         return json.loads(clean)
+    except json.JSONDecodeError as e:
+        return {"can_answer": False, "response": "", "reason": f"Не вдалось розібрати відповідь AI: {e}"}
     except Exception as e:
         return {"can_answer": False, "response": "", "reason": str(e)}
 
