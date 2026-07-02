@@ -30,4 +30,15 @@ def health():
     return {"status": "ok"}
 
 
+@app.get("/api/ai-status")
+def ai_status():
+    """Перевіряє який AI-провайдер активний — без виклику зовнішніх API."""
+    import os
+    if os.getenv("ANTHROPIC_API_KEY"):
+        return {"provider": "anthropic", "provider_label": "Claude (Anthropic)"}
+    elif os.getenv("GROQ_API_KEY"):
+        return {"provider": "groq", "provider_label": "Llama 3.3 (Groq)"}
+    return {"provider": "none", "provider_label": "не налаштовано"}
+
+
 app.mount("/", StaticFiles(directory="static", html=True), name="static")

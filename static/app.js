@@ -52,6 +52,15 @@ async function apiFetch(path, method = "GET", body = null, auth = true){
 }
 
 // ===== SIDEBAR NAV =====
+const SECTION_LOADERS = {
+  inbox: () => loadInbox(),
+  orders: () => loadOrders(),
+  publish: () => loadPublications(),
+  reports: () => loadReports(),
+  kanban: () => loadKanban(),
+  settings: () => checkAiStatus(),
+};
+
 document.querySelectorAll(".nav-item[data-section]").forEach(btn => {
   btn.addEventListener("click", () => {
     document.querySelectorAll(".nav-item").forEach(b => b.classList.remove("active"));
@@ -59,6 +68,7 @@ document.querySelectorAll(".nav-item[data-section]").forEach(btn => {
     const sec = btn.dataset.section;
     document.querySelectorAll(".section").forEach(s => s.hidden = true);
     document.getElementById(sec + "Section").hidden = false;
+    if(SECTION_LOADERS[sec]) SECTION_LOADERS[sec]();
   });
 });
 
@@ -307,18 +317,21 @@ async function loadReports(){
   }).join("");
 }
 
-// ===== AI STATUS CHECK =====
+// ===== AI STATUS CHECK (через бекенд, не напряму до Anthropic) =====
 async function checkAiStatus(){
   const badge = document.getElementById("aiStatusBadge");
+  if(!badge) return;
   try {
-    const res = await fetch("https://api.anthropic.com/v1/models", {headers:{"x-api-key":"test","anthropic-version":"2023-06-01"}});
-    if(res.status === 401) {
-      badge.textContent = "Потрібен API ключ";
-      badge.className = "channel-badge pending";
+    const res = await apiFetch("/api/ai-status");
+    if(res.ok){
+      const d = await res.json();
+      badge.textContent = d.provider === "none" ? "Потрібен API ключ" : `${d.provider_label} активний`;
+      badge.className = `channel-badge ${d.provider === "none" ? "pending" : "ok"}`;
     }
-  } catch { badge.textContent = "Перевірте ключ"; badge.className = "channel-badge pending"; }
-  const res2 = await apiFetch("/health");
-  if(res2.ok){ badge.textContent = "Сервер OK"; badge.className = "channel-badge ok"; }
+  } catch {
+    badge.textContent = "Недоступно";
+    badge.className = "channel-badge pending";
+  }
 }
 
 // ===== POLLING =====
