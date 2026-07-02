@@ -180,8 +180,11 @@
 
     <!-- KANBAN -->
     <section id="kanbanSection" class="section" hidden>
-      <div class="panel-header" style="padding:16px 24px">
-        <span class="panel-title">Канбан — розмови</span>
+      <div class="panel-header" style="padding:12px 24px">
+        <div class="kanban-tabs">
+          <button class="kanban-tab active" data-ktab="conversations">Розмови</button>
+          <button class="kanban-tab" data-ktab="orders">Замовлення</button>
+        </div>
         <div style="display:flex;gap:8px;align-items:center">
           <select id="kanbanChannelFilter" class="filter-select">
             <option value="">Всі канали</option>
@@ -195,7 +198,9 @@
           </button>
         </div>
       </div>
-      <div class="kanban-board" id="kanbanBoard">
+
+      <!-- Розмови -->
+      <div class="kanban-board" id="kanbanConvBoard">
         <div class="kanban-col" data-status="ai">
           <div class="kanban-col-head">
             <span class="kanban-col-title">🤖 AI оператор</span>
@@ -223,6 +228,45 @@
             <span class="kanban-col-count" id="cnt-done">0</span>
           </div>
           <div class="kanban-cards" id="col-done" ondragover="onDragOver(event)" ondrop="onDrop(event,'done')"></div>
+        </div>
+      </div>
+
+      <!-- Замовлення -->
+      <div class="kanban-board" id="kanbanOrderBoard" hidden>
+        <div class="kanban-col">
+          <div class="kanban-col-head">
+            <span class="kanban-col-title">🆕 Нові</span>
+            <span class="kanban-col-count" id="ocnt-new">0</span>
+          </div>
+          <div class="kanban-cards" id="ocol-new" ondragover="onDragOver(event)" ondrop="onDropOrder(event,'new')"></div>
+        </div>
+        <div class="kanban-col">
+          <div class="kanban-col-head">
+            <span class="kanban-col-title">✅ Підтверджено</span>
+            <span class="kanban-col-count" id="ocnt-confirmed">0</span>
+          </div>
+          <div class="kanban-cards" id="ocol-confirmed" ondragover="onDragOver(event)" ondrop="onDropOrder(event,'confirmed')"></div>
+        </div>
+        <div class="kanban-col">
+          <div class="kanban-col-head">
+            <span class="kanban-col-title">🔥 Готується</span>
+            <span class="kanban-col-count" id="ocnt-cooking">0</span>
+          </div>
+          <div class="kanban-cards" id="ocol-cooking" ondragover="onDragOver(event)" ondrop="onDropOrder(event,'cooking')"></div>
+        </div>
+        <div class="kanban-col">
+          <div class="kanban-col-head">
+            <span class="kanban-col-title">🛵 В дорозі</span>
+            <span class="kanban-col-count" id="ocnt-delivering">0</span>
+          </div>
+          <div class="kanban-cards" id="ocol-delivering" ondragover="onDragOver(event)" ondrop="onDropOrder(event,'delivering')"></div>
+        </div>
+        <div class="kanban-col">
+          <div class="kanban-col-head">
+            <span class="kanban-col-title">🏁 Виконано</span>
+            <span class="kanban-col-count" id="ocnt-done">0</span>
+          </div>
+          <div class="kanban-cards" id="ocol-done" ondragover="onDragOver(event)" ondrop="onDropOrder(event,'done')"></div>
         </div>
       </div>
     </section>

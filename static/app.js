@@ -247,6 +247,9 @@ async function loadOrders(){
 
 async function changeOrderStatus(sel){
   await apiFetch(`/api/orders/${sel.dataset.id}`, "PATCH", {status: sel.value});
+  // Якщо канбан відкритий — оновлюємо і його
+  const activeSection = document.querySelector(".nav-item.active")?.dataset?.section;
+  if(activeSection === "kanban" && activeKanbanTab === "orders") loadKanban();
 }
 
 // ===== PUBLISH =====
@@ -352,17 +355,37 @@ function fmtTime(iso){ try { return new Date(iso).toLocaleString("uk-UA",{day:"2
 
 // ===== KANBAN =====
 let draggedCard = null;
+let draggedOrderId = null;
+let activeKanbanTab = "conversations";
 
 document.getElementById("refreshKanban").addEventListener("click", loadKanban);
 document.getElementById("kanbanChannelFilter").addEventListener("change", loadKanban);
 
+// Перемикання вкладок канбану
+document.querySelectorAll(".kanban-tab").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".kanban-tab").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    activeKanbanTab = btn.dataset.ktab;
+    const isConv = activeKanbanTab === "conversations";
+    document.getElementById("kanbanConvBoard").hidden = !isConv;
+    document.getElementById("kanbanOrderBoard").hidden = isConv;
+    document.getElementById("kanbanChannelFilter").style.display = isConv ? "" : "none";
+    loadKanban();
+  });
+});
+
 async function loadKanban(){
+  if(activeKanbanTab === "conversations") await loadKanbanConversations();
+  else await loadKanbanOrders();
+}
+
+// --- Розмови ---
+async function loadKanbanConversations(){
   const channel = document.getElementById("kanbanChannelFilter").value;
-  const url = "/api/conversations";
-  const res = await apiFetch(url);
+  const res = await apiFetch("/api/conversations");
   if(!res.ok) return;
   let convs = await res.json();
-
   if(channel) convs = convs.filter(c => c.channel === channel);
 
   const cols = {ai:[], human:[], sales:[], done:[]};
@@ -393,18 +416,74 @@ async function loadKanban(){
           ${c.quality_score ? `<span class="status-pill" style="background:#f3e5f5;color:#4a148c">★${c.quality_score}</span>` : ""}
         </div>
       </div>
-    `).join("") || '<p style="font-size:12px;color:rgba(34,27,20,.4);text-align:center;padding:16px 0">Порожньо</p>';
+    `).join("") || '<p class="kanban-empty-col">Порожньо</p>';
 
     col.querySelectorAll(".kanban-card").forEach(card => {
-      card.addEventListener("dragstart", e => { draggedCard = card; card.classList.add("dragging"); });
+      card.addEventListener("dragstart", e => { draggedCard = card; draggedOrderId = null; card.classList.add("dragging"); });
       card.addEventListener("dragend", e => { card.classList.remove("dragging"); draggedCard = null; });
       card.addEventListener("click", () => {
-        // Відкриваємо розмову в інбоксі
         document.querySelector('[data-section="inbox"]').click();
         openConv(card.dataset.ch, card.dataset.eid);
       });
     });
   }
+}
+
+// --- Замовлення ---
+const ORDER_STATUSES = ["new","confirmed","cooking","delivering","done"];
+const ORDER_STATUS_LABELS = {new:"Нова",confirmed:"Підтверджена",cooking:"Готується",delivering:"В дорозі",done:"Виконано",cancelled:"Скасовано"};
+
+async function loadKanbanOrders(){
+  const res = await apiFetch("/api/orders");
+  if(!res.ok) return;
+  const orders = await res.json();
+
+  // Активні + завершені окремо (cancelled ховаємо в done)
+  const cols = {new:[], confirmed:[], cooking:[], delivering:[], done:[]};
+  for(const o of orders){
+    const st = o.status === "cancelled" ? "done" : o.status;
+    if(cols[st]) cols[st].push(o);
+  }
+
+  for(const [status, cards] of Object.entries(cols)){
+    const col = document.getElementById("ocol-" + status);
+    const cnt = document.getElementById("ocnt-" + status);
+    if(!col) continue;
+    cnt.textContent = cards.length;
+    col.innerHTML = cards.map(o => `
+      <div class="kanban-card ${o.status==='done'||o.status==='cancelled' ? 'kanban-card-closed' : ''}"
+           draggable="${o.status!=='done'&&o.status!=='cancelled'}"
+           data-order-id="${o.id}" data-order-status="${o.status}">
+        <div class="kanban-card-top">
+          <span class="kanban-card-name">${esc(o.name)||"Без імені"} #${o.id}</span>
+          <span class="channel-pill-small">${o.total} ₴</span>
+        </div>
+        ${o.address ? `<p class="kanban-card-msg">📍 ${esc(o.address)}</p>` : ""}
+        ${o.phone ? `<p class="kanban-card-msg" style="margin-top:2px">📞 ${esc(o.phone)}</p>` : ""}
+        <div class="kanban-card-footer">
+          <span class="kanban-card-time">${fmtTime(o.created_at)}</span>
+          ${o.status==='cancelled' ? '<span style="font-size:10px;color:var(--rust);font-weight:700">Скасовано</span>' : ''}
+        </div>
+      </div>
+    `).join("") || '<p class="kanban-empty-col">Порожньо</p>';
+
+    col.querySelectorAll(".kanban-card").forEach(card => {
+      const oid = card.dataset.orderId;
+      const st = card.dataset.orderStatus;
+      if(st === "done" || st === "cancelled") return;
+      card.addEventListener("dragstart", e => { draggedOrderId = oid; draggedCard = null; card.classList.add("dragging"); });
+      card.addEventListener("dragend", e => { card.classList.remove("dragging"); draggedOrderId = null; });
+      card.addEventListener("click", () => {
+        // Відкриваємо вкладку Заявки
+        document.querySelector('[data-section="orders"]').click();
+      });
+    });
+  }
+
+  // Drag-leave прибираємо клас
+  document.querySelectorAll("#kanbanOrderBoard .kanban-cards").forEach(col => {
+    col.addEventListener("dragleave", e => { if(!col.contains(e.relatedTarget)) col.classList.remove("drag-over"); });
+  });
 }
 
 function onDragOver(e){ e.preventDefault(); e.currentTarget.classList.add("drag-over"); }
@@ -422,7 +501,18 @@ async function onDrop(e, newStatus){
   if(newStatus === "done") setTimeout(loadReports, 3000);
 }
 
-// Прибираємо drag-over при виході
-document.querySelectorAll(".kanban-cards").forEach(col => {
+async function onDropOrder(e, newStatus){
+  e.preventDefault();
+  e.currentTarget.classList.remove("drag-over");
+  if(!draggedOrderId) return;
+  await apiFetch(`/api/orders/${draggedOrderId}`, "PATCH", {status: newStatus});
+  // Синхронізуємо таблицю заявок
+  await loadKanban();
+  await loadOrders();
+  draggedOrderId = null;
+}
+
+// Drag-leave для розмов
+document.querySelectorAll("#kanbanConvBoard .kanban-cards").forEach(col => {
   col.addEventListener("dragleave", e => { if(!col.contains(e.relatedTarget)) col.classList.remove("drag-over"); });
 });
